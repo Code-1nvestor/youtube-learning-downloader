@@ -12,6 +12,9 @@
 import { loadConfig } from './config.ts';
 import { createApp } from './app.ts';
 import { YtDlpService } from './core/yt-dlp.service.ts';
+import { DownloadService } from './services/download.service.ts';
+import { NamingService } from './services/naming.service.ts';
+import { QueueService } from './services/queue.service.ts';
 import { isAppError } from './types/errors.ts';
 
 async function main(): Promise<void> {
@@ -35,7 +38,20 @@ async function main(): Promise<void> {
     }
   }
 
-  const app = createApp(config, ytDlpService);
+  // 初始化下载服务链
+  const downloadService = new DownloadService(config.ytDlpBinary);
+  const namingService = new NamingService();
+  const queueService = new QueueService(downloadService, namingService, {
+    maxConcurrent: config.maxConcurrent,
+    downloadPath: config.downloadPath,
+    namingTemplate: config.namingTemplate,
+  });
+
+  console.log(`[startup] 下载目录: ${config.downloadPath}`);
+  console.log(`[startup] 最大并发: ${config.maxConcurrent}`);
+  console.log(`[startup] 命名模板: ${config.namingTemplate}`);
+
+  const app = createApp(config, ytDlpService, queueService);
 
   const server = app.listen(config.port, () => {
     console.log(`[startup] 学习资料下载器后端已启动: http://localhost:${config.port}`);

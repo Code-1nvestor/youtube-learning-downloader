@@ -14,7 +14,8 @@
  * 扩展点：若未来需要实时进度（下载场景），可增加 onStdoutLine 回调参数。
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import readline from 'node:readline';
 import { AppError } from '../types/errors.ts';
 
 export interface RunProcessOptions {
@@ -119,6 +120,111 @@ export async function runProcess(
       resolve({
         stdout: Buffer.concat(stdoutChunks).toString('utf8'),
         stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        exitCode: code ?? -1,
+        durationMs: Date.now() - startedAt,
+      });
+    });
+  });
+}
+
+// ————————————————————————————————————————————
+// 流式执行器（下载场景：逐行解析进度）
+// ————————————————————————————————————————————
+
+export interface StreamingProcessOptions extends RunProcessOptions {
+  /** 每行 stdout 回调（进度行、状态行等） */
+  onStdoutLine?: (line: string) => void;
+  /** 每行 stderr 回调（错误信息、警告） */
+  onStderrLine?: (line: string) => void;
+  /** AbortSignal：触发时终止子进程（用于暂停/取消下载） */
+  signal?: AbortSignal;
+}
+
+/**
+ * 流式执行外部命令：逐行回调 stdout/stderr，支持 AbortSignal 取消。
+ *
+ * 与 runProcess 的区别：
+ * - 不等待全部输出，逐行推送（适合实时进度）
+ * - 无超时（下载可能持续数小时，由调用方通过 AbortSignal 控制）
+ * - AbortSignal.abort() → SIGTERM 子进程，promise resolve（exitCode 非 0）
+ *
+ * @returns 与 runProcess 相同的 ProcessResult（stdout/stderr 为完整拼接）
+ */
+export async function runProcessStreaming(
+  command: string,
+  args: string[],
+  options: StreamingProcessOptions = {},
+): Promise<ProcessResult> {
+  const { onStdoutLine, onStderrLine, signal, maxOutputBytes = 64 * 1024 * 1024, cwd } = options;
+  const startedAt = Date.now();
+
+  return new Promise<ProcessResult>((resolve, reject) => {
+    const child: ChildProcess = spawn(command, args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+    });
+
+    const stdoutLines: string[] = [];
+    const stderrLines: string[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let settled = false;
+
+    const finish = (result: ProcessResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    // stdout 逐行处理
+    if (child.stdout) {
+      const rl = readline.createInterface({ input: child.stdout });
+      rl.on('line', (line) => {
+        stdoutBytes += line.length + 1;
+        if (stdoutBytes <= maxOutputBytes) stdoutLines.push(line);
+        onStdoutLine?.(line);
+      });
+    }
+
+    // stderr 逐行处理
+    if (child.stderr) {
+      const rl = readline.createInterface({ input: child.stderr });
+      rl.on('line', (line) => {
+        stderrBytes += line.length + 1;
+        if (stderrBytes <= maxOutputBytes) stderrLines.push(line);
+        onStderrLine?.(line);
+      });
+    }
+
+    // AbortSignal 处理：外部调用 abort() 时终止子进程
+    if (signal) {
+      if (signal.aborted) {
+        child.kill('SIGTERM');
+      } else {
+        signal.addEventListener('abort', () => {
+          child.kill('SIGTERM');
+          // 1 秒后强杀兜底
+          setTimeout(() => {
+            if (!child.killed) child.kill('SIGKILL');
+          }, 1_000).unref();
+        }, { once: true });
+      }
+    }
+
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (settled) return;
+      if (err.code === 'ENOENT') {
+        reject(new BinaryNotFoundError(command));
+      } else {
+        reject(new AppError('UNKNOWN', `无法启动子进程: ${err.message}`, { command }));
+      }
+    });
+
+    child.on('close', (code) => {
+      finish({
+        stdout: stdoutLines.join('\n'),
+        stderr: stderrLines.join('\n'),
         exitCode: code ?? -1,
         durationMs: Date.now() - startedAt,
       });

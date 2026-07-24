@@ -16,8 +16,16 @@ export interface AppConfig {
   port: number;
   /** yt-dlp 可执行文件名或绝对路径 */
   ytDlpBinary: string;
+  /** ffmpeg 可执行文件名或绝对路径（Phase 3 暂不强制检测） */
+  ffmpegBinary: string;
   /** 单次解析超时（毫秒） */
   resolveTimeoutMs: number;
+  /** 默认下载根目录 */
+  downloadPath: string;
+  /** 最大并发下载数 */
+  maxConcurrent: number;
+  /** 默认文件命名模板 */
+  namingTemplate: string;
   /** 是否在 API 错误响应中附带 details（开发环境开启便于调试） */
   isDev: boolean;
 }
@@ -25,7 +33,11 @@ export interface AppConfig {
 const DEFAULTS: AppConfig = {
   port: 3000,
   ytDlpBinary: 'yt-dlp',
+  ffmpegBinary: 'ffmpeg',
   resolveTimeoutMs: 60_000,
+  downloadPath: '',
+  maxConcurrent: 2,
+  namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
   isDev: process.env.NODE_ENV !== 'production',
 };
 
@@ -43,13 +55,23 @@ function tryLoadEnvFile(): void {
 export function loadConfig(): AppConfig {
   tryLoadEnvFile();
 
+  // 下载目录默认值：项目根目录下的 downloads/
+  const defaultDownloadPath = path.resolve(process.cwd(), 'downloads');
+
   return {
     port: parseIntWithFallback(process.env.PORT, DEFAULTS.port),
     ytDlpBinary: process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary,
+    ffmpegBinary: process.env.FFMPEG_BINARY ?? DEFAULTS.ffmpegBinary,
     resolveTimeoutMs: parseIntWithFallback(
       process.env.RESOLVE_TIMEOUT_MS,
       DEFAULTS.resolveTimeoutMs,
     ),
+    downloadPath: process.env.DOWNLOAD_PATH ?? defaultDownloadPath,
+    maxConcurrent: parseIntWithFallback(
+      process.env.MAX_CONCURRENT,
+      DEFAULTS.maxConcurrent,
+    ),
+    namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
     isDev: DEFAULTS.isDev,
   };
 }

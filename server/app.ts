@@ -18,11 +18,18 @@ import express, {
 } from 'express';
 import type { AppConfig } from './config.ts';
 import type { YtDlpService } from './core/yt-dlp.service.ts';
+import type { QueueService } from './services/queue.service.ts';
 import { createResolveRouter } from './routes/resolve.ts';
+import { createDownloadRouter } from './routes/download.ts';
+import { createQueueRouter } from './routes/queue.ts';
 import { AppError, isAppError } from './types/errors.ts';
 import { ok, fail } from './types/result.ts';
 
-export function createApp(config: AppConfig, ytDlpService: YtDlpService): Express {
+export function createApp(
+  config: AppConfig,
+  ytDlpService: YtDlpService,
+  queueService: QueueService,
+): Express {
   const app = express();
 
   app.use(express.json({ limit: '1mb' }));
@@ -34,7 +41,8 @@ export function createApp(config: AppConfig, ytDlpService: YtDlpService): Expres
 
   // —— 业务路由 ——
   app.use('/api/resolve', createResolveRouter(ytDlpService));
-  // Phase 3+ 扩展位: app.use('/api/download', ...)
+  app.use('/api/download', createDownloadRouter(ytDlpService, queueService));
+  app.use('/api/queue', createQueueRouter(queueService));
   // Phase 4+ 扩展位: app.use('/api/subtitle', ...)
 
   // —— 404 ——
