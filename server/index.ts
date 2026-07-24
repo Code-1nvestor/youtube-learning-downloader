@@ -1,0 +1,63 @@
+/**
+ * index.ts — 服务入口（启动流程编排）
+ *
+ * 启动顺序：
+ * 1. loadConfig          —— 加载配置
+ * 2. 环境自检            —— yt-dlp 可用性（缺失只警告不退出：解析接口会返回
+ *                           YT_DLP_MISSING 结构化错误，前端可引导用户安装）
+ * 3. createApp + listen  —— 启动 HTTP 服务
+ * 4. 注册优雅退出        —— SIGINT/SIGTERM 时先停止接收新连接，再退出
+ */
+
+import { loadConfig } from './config.ts';
+import { createApp } from './app.ts';
+import { YtDlpService } from './core/yt-dlp.service.ts';
+import { isAppError } from './types/errors.ts';
+
+async function main(): Promise<void> {
+  const config = loadConfig();
+
+  const ytDlpService = new YtDlpService({
+    binary: config.ytDlpBinary,
+    timeoutMs: config.resolveTimeoutMs,
+  });
+
+  // 环境自检：失败不阻断启动，让 API 层返回结构化错误引导用户
+  try {
+    const version = await ytDlpService.checkAvailable();
+    console.log(`[startup] yt-dlp 版本: ${version}`);
+  } catch (err) {
+    if (isAppError(err)) {
+      console.warn(`[startup] 警告: ${err.message}`);
+      console.warn('[startup] 服务将继续启动，/api/resolve 会返回 YT_DLP_MISSING 错误');
+    } else {
+      throw err;
+    }
+  }
+
+  const app = createApp(config, ytDlpService);
+
+  const server = app.listen(config.port, () => {
+    console.log(`[startup] 学习资料下载器后端已启动: http://localhost:${config.port}`);
+    console.log(`[startup] 健康检查: http://localhost:${config.port}/api/health`);
+  });
+
+  // 优雅退出：先 close 停止接收新连接，等待存量请求结束
+  const shutdown = (signal: string): void => {
+    console.log(`\n[shutdown] 收到 ${signal}，正在关闭...`);
+    server.close(() => {
+      console.log('[shutdown] 已停止接收新连接，退出');
+      process.exit(0);
+    });
+    // 兜底：5 秒内未能优雅退出则强制退出
+    setTimeout(() => process.exit(1), 5_000).unref();
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+main().catch((err) => {
+  console.error('[fatal] 启动失败:', err);
+  process.exit(1);
+});
