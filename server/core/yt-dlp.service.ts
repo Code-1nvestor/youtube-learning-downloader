@@ -25,6 +25,7 @@
 import { runProcess, BinaryNotFoundError } from './process.ts';
 import { classifyQuery } from './url-classifier.ts';
 import { AppError } from '../types/errors.ts';
+import type { CookieArg } from '../types/auth.ts';
 import type {
   ResolveResult,
   VideoInfo,
@@ -42,9 +43,11 @@ export interface YtDlpServiceOptions {
   binary?: string;
   /** 单次解析超时（毫秒），大播放列表建议 ≥ 60s */
   timeoutMs?: number;
+  /** Cookie 参数提供者（可选，运行时动态读取） */
+  getCookieArg?: () => CookieArg | undefined;
 }
 
-const DEFAULT_OPTIONS: Required<YtDlpServiceOptions> = {
+const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'getCookieArg'>> = {
   binary: 'yt-dlp',
   timeoutMs: 60_000,
 };
@@ -107,11 +110,12 @@ interface RawPlaylistJson {
 export class YtDlpService {
   private readonly binary: string;
   private readonly timeoutMs: number;
+  private readonly getCookieArg?: () => CookieArg | undefined;
 
   constructor(options: YtDlpServiceOptions = {}) {
-    const opts = { ...DEFAULT_OPTIONS, ...options };
-    this.binary = opts.binary;
-    this.timeoutMs = opts.timeoutMs;
+    this.binary = options.binary ?? DEFAULT_OPTIONS.binary;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs;
+    this.getCookieArg = options.getCookieArg;
   }
 
   /**
@@ -219,7 +223,9 @@ export class YtDlpService {
   /** 执行 yt-dlp 并统一翻译错误（所有私有方法的唯一出口） */
   private async exec(args: string[], contextMessage: string) {
     try {
-      const result = await runProcess(this.binary, args, {
+      // 注入 Cookie 参数（如已配置）
+      const finalArgs = this.injectCookieArg(args);
+      const result = await runProcess(this.binary, finalArgs, {
         timeoutMs: this.timeoutMs,
       });
 
@@ -237,6 +243,18 @@ export class YtDlpService {
       }
       throw err;
     }
+  }
+
+  /** 在命令参数末尾（URL 前）注入 Cookie 参数 */
+  private injectCookieArg(args: string[]): string[] {
+    const cookieArg = this.getCookieArg?.();
+    if (!cookieArg) return args;
+    // URL 是最后一个参数，Cookie 参数需放在 URL 前
+    if (args.length === 0) {
+      return [cookieArg.flag, cookieArg.value];
+    }
+    const url = args[args.length - 1]!;
+    return [...args.slice(0, -1), cookieArg.flag, cookieArg.value, url];
   }
 
   /**
@@ -263,7 +281,7 @@ export class YtDlpService {
     }
     // YouTube 机器人验证：需要浏览器 Cookie 证明非机器人（真实高频场景，2024+ 常见）
     if (text.includes('sign in to confirm') || text.includes('not a bot')) {
-      return new AppError('RATE_LIMITED', 'YouTube 要求进行人机验证。请配置浏览器 Cookie 后重试（Phase 6 将提供 Cookie 导入功能）', {
+      return new AppError('RATE_LIMITED', 'YouTube 要求进行人机验证。请通过 /api/auth/cookie 配置浏览器 Cookie 后重试', {
         stderr: tail(stderr),
       });
     }

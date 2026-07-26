@@ -20,6 +20,7 @@
 
 import { runProcessStreaming } from '../core/process.ts';
 import { AppError } from '../types/errors.ts';
+import type { CookieArg } from '../types/auth.ts';
 import type { DownloadTask, ProgressInfo } from '../types/download.ts';
 
 export interface DownloadCallbacks {
@@ -29,11 +30,20 @@ export interface DownloadCallbacks {
   onWarning?: (line: string) => void;
 }
 
+export interface DownloadServiceOptions {
+  /** yt-dlp 可执行文件名或路径 */
+  binary: string;
+  /** Cookie 参数提供者（可选，运行时动态读取） */
+  getCookieArg?: () => CookieArg | undefined;
+}
+
 export class DownloadService {
   private readonly binary: string;
+  private readonly getCookieArg?: () => CookieArg | undefined;
 
-  constructor(binary: string) {
-    this.binary = binary;
+  constructor(options: DownloadServiceOptions) {
+    this.binary = options.binary;
+    this.getCookieArg = options.getCookieArg;
   }
 
   /**
@@ -124,6 +134,12 @@ export class DownloadService {
     // 抑制非必要输出
     args.push('--no-warnings');
     args.push('--no-playlist');
+
+    // 注入 Cookie 参数（在 URL 之前）
+    const cookieArg = this.getCookieArg?.();
+    if (cookieArg) {
+      args.push(cookieArg.flag, cookieArg.value);
+    }
 
     // 目标 URL
     args.push(`https://www.youtube.com/watch?v=${task.videoId}`);

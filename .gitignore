@@ -10,6 +10,9 @@ dist/
 .env.local
 .env.*.local
 
+# Cookie 文件（含登录凭据，绝对不入库）
+.cookies/
+
 # 数据库文件
 *.db
 *.db-journal

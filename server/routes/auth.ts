@@ -1,0 +1,70 @@
+/**
+ * routes/auth.ts - Cookie 配置路由
+ *
+ * GET    /api/auth/cookie              查询当前 Cookie 配置状态
+ * POST   /api/auth/cookie/file         从 Netscape 文件内容配置
+ * POST   /api/auth/cookie/browser      从浏览器自动读取配置
+ * DELETE /api/auth/cookie              清除配置
+ *
+ * 安全说明：
+ * - 所有响应只暴露状态元信息，不返回 Cookie 内容
+ * - file 模式接收文件内容字符串（前端可走 multipart 或 base64）
+ */
+
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import type { CookieService } from '../services/cookie.service.ts';
+import type { SetCookieFileRequest, SetCookieBrowserRequest } from '../types/auth.ts';
+import { AppError } from '../types/errors.ts';
+import { ok } from '../types/result.ts';
+
+function asyncHandler(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    fn(req, res, next).catch(next);
+  };
+}
+
+export function createAuthRouter(cookieService: CookieService): Router {
+  const router = Router();
+
+  // -- 查询状态 --
+  router.get('/cookie', (_req, res) => {
+    res.json(ok(cookieService.getStatus()));
+  });
+
+  // -- 从文件配置 --
+  router.post(
+    '/cookie/file',
+    asyncHandler(async (req, res) => {
+      const body = req.body as SetCookieFileRequest;
+      if (!body?.content || typeof body.content !== 'string') {
+        throw new AppError('MISSING_PARAM', '请求体需包含 content 字段（Cookie 文件内容）');
+      }
+      cookieService.setFromFile(body.content);
+      res.json(ok(cookieService.getStatus()));
+    }),
+  );
+
+  // -- 从浏览器配置 --
+  router.post(
+    '/cookie/browser',
+    asyncHandler(async (req, res) => {
+      const body = req.body as SetCookieBrowserRequest;
+      const allowed = ['chrome', 'edge', 'firefox', 'brave', 'safari'];
+      if (!body?.browser || !allowed.includes(body.browser)) {
+        throw new AppError('MISSING_PARAM', `browser 必须是: ${allowed.join(', ')}`);
+      }
+      cookieService.setFromBrowser(body.browser);
+      res.json(ok(cookieService.getStatus()));
+    }),
+  );
+
+  // -- 清除配置 --
+  router.delete('/cookie', (_req, res) => {
+    cookieService.clear();
+    res.json(ok(cookieService.getStatus()));
+  });
+
+  return router;
+}
