@@ -16,6 +16,7 @@ import { CookieService } from './services/cookie.service.ts';
 import { DownloadService } from './services/download.service.ts';
 import { NamingService } from './services/naming.service.ts';
 import { QueueService } from './services/queue.service.ts';
+import { SubtitleService } from './services/subtitle.service.ts';
 import { isAppError } from './types/errors.ts';
 
 async function main(): Promise<void> {
@@ -60,7 +61,13 @@ async function main(): Promise<void> {
   console.log(`[startup] 命名模板: ${config.namingTemplate}`);
   console.log(`[startup] Cookie 状态: ${cookieService.getStatus().source}`);
 
-  const app = createApp(config, ytDlpService, queueService, cookieService);
+  // 字幕服务（复用 ytDlpService 的解析能力 + cookie 配置）
+  const subtitleService = new SubtitleService(ytDlpService, {
+    binary: config.ytDlpBinary,
+    getCookieArg: () => cookieService.getArg(),
+  });
+
+  const app = createApp(config, ytDlpService, queueService, cookieService, subtitleService);
 
   const server = app.listen(config.port, () => {
     console.log(`[startup] 学习资料下载器后端已启动: http://localhost:${config.port}`);

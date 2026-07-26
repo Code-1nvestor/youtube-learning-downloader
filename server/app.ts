@@ -20,10 +20,12 @@ import type { AppConfig } from './config.ts';
 import type { YtDlpService } from './core/yt-dlp.service.ts';
 import type { QueueService } from './services/queue.service.ts';
 import type { CookieService } from './services/cookie.service.ts';
+import type { SubtitleService } from './services/subtitle.service.ts';
 import { createResolveRouter } from './routes/resolve.ts';
 import { createDownloadRouter } from './routes/download.ts';
 import { createQueueRouter } from './routes/queue.ts';
 import { createAuthRouter } from './routes/auth.ts';
+import { createSubtitleRouter } from './routes/subtitle.ts';
 import { AppError, isAppError } from './types/errors.ts';
 import { ok, fail } from './types/result.ts';
 
@@ -32,6 +34,7 @@ export function createApp(
   ytDlpService: YtDlpService,
   queueService: QueueService,
   cookieService: CookieService,
+  subtitleService: SubtitleService,
 ): Express {
   const app = express();
 
@@ -48,7 +51,7 @@ export function createApp(
   app.use('/api/download', createDownloadRouter(ytDlpService, queueService));
   app.use('/api/queue', createQueueRouter(queueService));
   app.use('/api/auth', createAuthRouter(cookieService));
-  // Phase 4 扩展位: app.use('/api/subtitle', ...)
+  app.use('/api/subtitle', createSubtitleRouter(subtitleService));
 
   // -- 404 --
   app.use(notFoundHandler);
