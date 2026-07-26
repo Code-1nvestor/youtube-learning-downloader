@@ -8,8 +8,8 @@
     "node": ">=20.12.0"
   },
   "scripts": {
-    "dev": "tsx watch server/index.ts",
-    "start": "tsx server/index.ts",
+    "dev": "tsx watch --node-options=--experimental-sqlite server/index.ts",
+    "start": "tsx --node-options=--experimental-sqlite server/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

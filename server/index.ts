@@ -1,12 +1,14 @@
 /**
- * index.ts — 服务入口（启动流程编排）
+ * index.ts - 服务入口（启动流程编排）
  *
  * 启动顺序：
- * 1. loadConfig          —— 加载配置
- * 2. 环境自检            —— yt-dlp 可用性（缺失只警告不退出：解析接口会返回
+ * 1. loadConfig          -- 加载配置
+ * 2. initDatabase        -- 初始化 SQLite（Phase 5）
+ * 3. 环境自检            -- yt-dlp 可用性（缺失只警告不退出：解析接口会返回
  *                           YT_DLP_MISSING 结构化错误，前端可引导用户安装）
- * 3. createApp + listen  —— 启动 HTTP 服务
- * 4. 注册优雅退出        —— SIGINT/SIGTERM 时先停止接收新连接，再退出
+ * 4. createApp + listen  -- 启动 HTTP 服务
+ * 5. queueService.restoreFromDb() -- 恢复上次未完成的任务
+ * 6. 注册优雅退出        -- SIGINT/SIGTERM 时关闭 DB、停止接收新连接、退出
  */
 
 import { loadConfig } from './config.ts';
@@ -17,10 +19,22 @@ import { DownloadService } from './services/download.service.ts';
 import { NamingService } from './services/naming.service.ts';
 import { QueueService } from './services/queue.service.ts';
 import { SubtitleService } from './services/subtitle.service.ts';
+import { HistoryService } from './services/history.service.ts';
+import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 
 async function main(): Promise<void> {
   const config = loadConfig();
+
+  // 初始化数据库（Phase 5 持久化）
+  let dbContext: DbContext | null;
+  try {
+    dbContext = initDatabase(config.dbPath);
+    console.log(`[startup] 数据库已初始化: ${config.dbPath}`);
+  } catch (err) {
+    console.error('[startup] 数据库初始化失败，将以纯内存模式运行:', err);
+    dbContext = null;
+  }
 
   // Cookie 管理服务（先初始化，供 yt-dlp 与 download 服务注入参数）
   const cookieService = new CookieService(process.cwd());
@@ -50,11 +64,17 @@ async function main(): Promise<void> {
     getCookieArg: () => cookieService.getArg(),
   });
   const namingService = new NamingService();
-  const queueService = new QueueService(downloadService, namingService, {
-    maxConcurrent: config.maxConcurrent,
-    downloadPath: config.downloadPath,
-    namingTemplate: config.namingTemplate,
-  });
+  const dbForQueue = dbContext;
+  const queueService = new QueueService(
+    downloadService,
+    namingService,
+    {
+      maxConcurrent: config.maxConcurrent,
+      downloadPath: config.downloadPath,
+      namingTemplate: config.namingTemplate,
+    },
+    dbForQueue,
+  );
 
   console.log(`[startup] 下载目录: ${config.downloadPath}`);
   console.log(`[startup] 最大并发: ${config.maxConcurrent}`);
@@ -67,18 +87,39 @@ async function main(): Promise<void> {
     getCookieArg: () => cookieService.getArg(),
   });
 
-  const app = createApp(config, ytDlpService, queueService, cookieService, subtitleService);
+  // 历史服务（Phase 5）
+  const historyService = new HistoryService(dbForQueue);
+
+  const app = createApp(
+    config,
+    ytDlpService,
+    queueService,
+    cookieService,
+    subtitleService,
+    historyService,
+  );
 
   const server = app.listen(config.port, () => {
     console.log(`[startup] 学习资料下载器后端已启动: http://localhost:${config.port}`);
     console.log(`[startup] 健康检查: http://localhost:${config.port}/api/health`);
+
+    // 启动后恢复未完成的任务
+    const result = queueService.restoreFromDb();
+    if (result.restored > 0) {
+      console.log(`[startup] 已恢复 ${result.restored} 个任务（${result.resumed} 个将自动继续下载）`);
+    }
   });
 
-  // 优雅退出：先 close 停止接收新连接，等待存量请求结束
+  // 优雅退出：先 close 停止接收新连接，关闭 DB，再退出
   const shutdown = (signal: string): void => {
     console.log(`\n[shutdown] 收到 ${signal}，正在关闭...`);
     server.close(() => {
-      console.log('[shutdown] 已停止接收新连接，退出');
+      console.log('[shutdown] 已停止接收新连接');
+      // 关闭数据库
+      if (dbForQueue) {
+        dbForQueue.close();
+        console.log('[shutdown] 数据库已关闭');
+      }
       process.exit(0);
     });
     // 兜底：5 秒内未能优雅退出则强制退出

@@ -7,6 +7,7 @@
 import { useStore } from './store';
 import { Home } from './pages/Home';
 import { Queue } from './pages/Queue';
+import { History } from './pages/History';
 import { Settings } from './pages/Settings';
 
 export default function App() {
@@ -26,6 +27,9 @@ export default function App() {
           <NavButton active={view === 'queue'} onClick={() => setView('queue')}>
             下载队列
           </NavButton>
+          <NavButton active={view === 'history'} onClick={() => setView('history')}>
+            历史
+          </NavButton>
           <NavButton active={view === 'settings'} onClick={() => setView('settings')}>
             设置
           </NavButton>
@@ -43,6 +47,7 @@ export default function App() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-6">
         {view === 'home' && <Home />}
         {view === 'queue' && <Queue />}
+        {view === 'history' && <History />}
         {view === 'settings' && <Settings />}
       </main>
     </div>

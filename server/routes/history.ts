@@ -1,0 +1,58 @@
+/**
+ * routes/history.ts - 下载历史路由
+ *
+ * GET    /api/history           分页查询历史记录（completed/failed/cancelled）
+ * DELETE /api/history/:id       删除单条历史记录
+ * DELETE /api/history           清空所有历史记录
+ *
+ * 查询参数：
+ * - page: 页码（从 1 开始，默认 1）
+ * - pageSize: 每页条数（默认 50，最大 200）
+ */
+
+import { Router, type Request, type Response } from 'express';
+import type { HistoryService } from '../services/history.service.ts';
+import { AppError } from '../types/errors.ts';
+import { ok } from '../types/result.ts';
+
+export function createHistoryRouter(historyService: HistoryService): Router {
+  const router = Router();
+
+  // -- 分页查询历史 --
+  router.get('/', (req, res) => {
+    const page = parsePage(req.query.page);
+    const pageSize = parsePageSize(req.query.pageSize);
+    const result = historyService.getHistory(page, pageSize);
+    res.json(ok(result));
+  });
+
+  // -- 清空所有历史（必须在 /:id 之前注册，否则会被 :id 匹配）--
+  router.delete('/', (_req, res) => {
+    const deleted = historyService.clearHistory();
+    res.json(ok({ deleted }));
+  });
+
+  // -- 删除单条历史 --
+  router.delete('/:id', (req, res) => {
+    const id = req.params.id;
+    if (!id) {
+      throw new AppError('MISSING_PARAM', '缺少历史记录 ID');
+    }
+    historyService.deleteHistory(id);
+    res.json(ok({ deleted: true, id }));
+  });
+
+  return router;
+}
+
+function parsePage(v: unknown): number {
+  if (v === undefined || v === null || Array.isArray(v)) return 1;
+  const n = Number.parseInt(String(v), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function parsePageSize(v: unknown): number {
+  if (v === undefined || v === null || Array.isArray(v)) return 50;
+  const n = Number.parseInt(String(v), 10);
+  return Number.isFinite(n) && n > 0 ? n : 50;
+}

@@ -108,6 +108,14 @@ export interface QueueStatus {
   failed: number;
 }
 
+export interface HistoryPage {
+  tasks: DownloadTask[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface CookieStatus {
   configured: boolean;
   source: 'file' | 'browser' | 'none';
@@ -204,6 +212,18 @@ export const api = {
 
   removeTask: (id: string) =>
     request<QueueStatus>(`/queue/${id}`, { method: 'DELETE' }),
+
+  // 历史
+  getHistory: (page = 1, pageSize = 50) =>
+    request<HistoryPage>(`/history?page=${page}&pageSize=${pageSize}`),
+
+  deleteHistory: (id: string) =>
+    request<{ deleted: boolean; id: string }>(`/history/${id}`, {
+      method: 'DELETE',
+    }),
+
+  clearHistory: () =>
+    request<{ deleted: number }>('/history', { method: 'DELETE' }),
 
   // Cookie
   getCookieStatus: () => request<CookieStatus>('/auth/cookie'),

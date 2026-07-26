@@ -26,6 +26,8 @@ export interface AppConfig {
   maxConcurrent: number;
   /** 默认文件命名模板 */
   namingTemplate: string;
+  /** SQLite 数据库文件路径 */
+  dbPath: string;
   /** 是否在 API 错误响应中附带 details（开发环境开启便于调试） */
   isDev: boolean;
 }
@@ -38,6 +40,7 @@ const DEFAULTS: AppConfig = {
   downloadPath: '',
   maxConcurrent: 2,
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
+  dbPath: '',
   isDev: process.env.NODE_ENV !== 'production',
 };
 
@@ -57,6 +60,8 @@ export function loadConfig(): AppConfig {
 
   // 下载目录默认值：项目根目录下的 downloads/
   const defaultDownloadPath = path.resolve(process.cwd(), 'downloads');
+  // 数据库默认值：项目根目录下的 data/app.db
+  const defaultDbPath = path.resolve(process.cwd(), 'data', 'app.db');
 
   return {
     port: parseIntWithFallback(process.env.PORT, DEFAULTS.port),
@@ -72,6 +77,7 @@ export function loadConfig(): AppConfig {
       DEFAULTS.maxConcurrent,
     ),
     namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
+    dbPath: process.env.DB_PATH ?? defaultDbPath,
     isDev: DEFAULTS.isDev,
   };
 }

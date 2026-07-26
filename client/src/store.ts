@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 import type { ResolveResult, DownloadTask, CookieStatus } from './api';
 
-type View = 'home' | 'queue' | 'settings';
+type View = 'home' | 'queue' | 'history' | 'settings';
 
 interface AppState {
   // -- 视图 --
