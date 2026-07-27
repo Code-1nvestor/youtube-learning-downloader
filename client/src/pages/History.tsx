@@ -69,7 +69,7 @@ export function History() {
   // 加载中
   if (loading && !data) {
     return (
-      <div className="flex items-center justify-center py-20 text-gray-400">
+      <div className="flex items-center justify-center py-20 text-gray-400 dark:text-gray-500">
         <p className="text-sm">加载中...</p>
       </div>
     );
@@ -78,7 +78,7 @@ export function History() {
   // 空状态
   if (data && data.tasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+      <div className="flex flex-col items-center justify-center py-20 text-gray-400 dark:text-gray-500">
         <p className="text-sm">暂无下载历史</p>
         <p className="text-xs mt-1">完成的下载任务会在这里显示</p>
       </div>
@@ -90,12 +90,12 @@ export function History() {
       {/* 顶部操作栏 */}
       {data && data.tasks.length > 0 && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
             共 {data.total} 条记录
           </span>
           <button
             onClick={handleClearAll}
-            className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+            className="text-xs text-red-500 dark:text-red-400 hover:text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 px-2 py-1 rounded transition-colors"
           >
             清空全部
           </button>
@@ -104,8 +104,8 @@ export function History() {
 
       {/* 历史列表 */}
       {data && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="divide-y divide-gray-50">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="divide-y divide-gray-50 dark:divide-gray-800">
             {data.tasks.map((task) => (
               <HistoryItem key={task.id} task={task} onDelete={handleDelete} />
             ))}
@@ -119,17 +119,17 @@ export function History() {
           <button
             onClick={() => load(page - 1)}
             disabled={page <= 1 || loading}
-            className="px-3 py-1.5 text-sm rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+            className="px-3 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors"
           >
             上一页
           </button>
-          <span className="text-sm text-gray-500 tabular-nums">
+          <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             {page} / {data.totalPages}
           </span>
           <button
             onClick={() => load(page + 1)}
             disabled={page >= data.totalPages || loading}
-            className="px-3 py-1.5 text-sm rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+            className="px-3 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors"
           >
             下一页
           </button>
@@ -147,9 +147,9 @@ function HistoryItem({
   onDelete: (task: DownloadTask) => void;
 }) {
   const statusColor: Record<string, string> = {
-    completed: 'text-green-600 bg-green-50',
-    failed: 'text-red-600 bg-red-50',
-    cancelled: 'text-gray-400 bg-gray-100',
+    completed: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/40',
+    failed: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 dark:bg-red-950/40',
+    cancelled: 'text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700',
   };
 
   const statusLabel: Record<string, string> = {
@@ -177,27 +177,27 @@ function HistoryItem({
     <div className="px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-800 truncate flex-1" title={task.title}>
+          <span className="text-sm text-gray-800 dark:text-gray-100 truncate flex-1" title={task.title}>
             {task.title}
           </span>
           <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${statusColor[task.status]}`}>
             {statusLabel[task.status]}
           </span>
         </div>
-        <div className="mt-1 flex items-center gap-3 text-xs text-gray-400">
+        <div className="mt-1 flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
           {completedTime && <span>{completedTime}</span>}
           {task.playlistTitle && <span className="truncate">{task.playlistTitle}</span>}
           {sizeStr && <span className="tabular-nums">{sizeStr}</span>}
         </div>
         {/* 错误信息 */}
         {task.status === 'failed' && task.error && (
-          <p className="text-xs text-red-500 mt-1 truncate" title={task.error}>
+          <p className="text-xs text-red-500 dark:text-red-400 mt-1 truncate" title={task.error}>
             {task.error}
           </p>
         )}
         {/* 输出路径（仅完成时显示） */}
         {task.status === 'completed' && (
-          <p className="text-xs text-gray-400 mt-1 truncate" title={task.outputPath}>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 truncate" title={task.outputPath}>
             📁 {task.outputPath}
           </p>
         )}
@@ -206,7 +206,7 @@ function HistoryItem({
       <button
         onClick={() => onDelete(task)}
         title="删除记录"
-        className="w-7 h-7 flex items-center justify-center rounded text-sm text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
+        className="w-7 h-7 flex items-center justify-center rounded text-sm text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 hover:text-red-500 dark:text-red-400 transition-colors flex-shrink-0"
       >
         🗑
       </button>

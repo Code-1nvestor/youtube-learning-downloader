@@ -2,17 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 表单元素统一样式 */
+/* ==========================================
+ * 表单元素统一样式（亮/暗自适应）
+ * ========================================== */
 @layer components {
   .select {
-    @apply w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500;
   }
   .input {
-    @apply w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500;
+  }
+  /* 卡片容器：亮色白底，暗色深灰底 */
+  .card {
+    @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl;
   }
 }
 
-/* 全局滚动条美化 */
+/* ==========================================
+ * 全局滚动条美化（亮/暗自适应）
+ * ========================================== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -27,3 +35,22 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+/* 暗色模式滚动条 */
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ==========================================
+ * 主题切换过渡（避免闪烁）
+ * ========================================== */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ==========================================
+ * 防止主题初始化闪烁（FOUC）
+ * 在 React 加载前，内联脚本已根据 localStorage/prefers 设置 .dark 类
+ * ========================================== */

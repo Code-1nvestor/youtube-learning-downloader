@@ -143,38 +143,92 @@ export interface CreateDownloadTaskInput {
 export class ApiError extends Error {
   readonly code: string;
   readonly details?: unknown;
-  constructor(code: string, message: string, details?: unknown) {
+  /** HTTP 状态码（网络错误时为 0） */
+  readonly statusCode: number;
+  constructor(code: string, message: string, details?: unknown, statusCode = 0) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.details = details;
+    this.statusCode = statusCode;
+  }
+
+  /** 是否为网络错误（离线/无法连接服务器） */
+  isNetworkError(): boolean {
+    return this.code === 'NETWORK_ERROR' || this.statusCode === 0;
+  }
+
+  /** 是否为可重试错误（网络错误或 5xx） */
+  isRetryable(): boolean {
+    return this.isNetworkError() || (this.statusCode >= 500 && this.statusCode < 600);
   }
 }
 
 // ==========================================
-// 请求封装
+// 请求封装（带网络异常重试）
 // ==========================================
 
 const BASE = '/api';
 
+/** 可重试的请求最大重试次数 */
+const MAX_RETRIES = 2;
+
+/** 重试延迟（毫秒） */
+const RETRY_DELAY_MS = 1000;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  let lastError: ApiError | null = null;
 
-  let body: ApiResponse<T>;
-  try {
-    body = (await res.json()) as ApiResponse<T>;
-  } catch {
-    throw new ApiError('UNKNOWN', `服务器返回了非 JSON 响应 (HTTP ${res.status})`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // 检查网络连接
+      if (!navigator.onLine && attempt === 0) {
+        throw new ApiError('NETWORK_ERROR', '网络不可用，请检查网络连接');
+      }
+
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+        ...init,
+      });
+
+      let body: ApiResponse<T>;
+      try {
+        body = (await res.json()) as ApiResponse<T>;
+      } catch {
+        throw new ApiError('UNKNOWN', `服务器返回了非 JSON 响应 (HTTP ${res.status})`, undefined, res.status);
+      }
+
+      if (body.success) {
+        return body.data;
+      }
+
+      // 业务错误，不重试
+      throw new ApiError(body.error.code, body.error.message, body.error.details, res.status);
+    } catch (err) {
+      // ApiError 但不可重试，直接抛出
+      if (err instanceof ApiError && !err.isRetryable()) {
+        throw err;
+      }
+
+      // 网络错误或可重试错误
+      const isNetworkErr = err instanceof TypeError || (err instanceof ApiError && err.isNetworkError());
+      lastError = isNetworkErr
+        ? new ApiError('NETWORK_ERROR', '无法连接到服务器，请确认后端服务已启动')
+        : err instanceof ApiError ? err : new ApiError('UNKNOWN', String(err));
+
+      // 最后一次尝试不再等待
+      if (attempt < MAX_RETRIES && lastError.isRetryable()) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+    }
   }
 
-  if (body.success) {
-    return body.data;
-  }
-
-  throw new ApiError(body.error.code, body.error.message, body.error.details);
+  throw lastError ?? new ApiError('UNKNOWN', '请求失败');
 }
 
 // ==========================================

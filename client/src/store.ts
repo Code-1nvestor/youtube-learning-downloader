@@ -1,12 +1,13 @@
 /**
  * store.ts - Zustand 全局状态管理
  *
- * 管理三个核心维度：
- * 1. 视图切换（home / queue / settings）
+ * 管理核心维度：
+ * 1. 视图切换（home / queue / history / settings）
  * 2. 解析流程（结果、加载态、错误）
  * 3. 队列状态（任务列表、轮询控制）
+ * 4. 网络状态（在线/离线）
  *
- * 不用 React Router：页面少（3 个），用 state 切换更简洁。
+ * 不用 React Router：页面少（4 个），用 state 切换更简洁。
  */
 
 import { create } from 'zustand';
@@ -37,6 +38,10 @@ interface AppState {
   cookieStatus: CookieStatus | null;
   setCookieStatus: (c: CookieStatus | null) => void;
 
+  // -- 网络状态 --
+  online: boolean;
+  setOnline: (b: boolean) => void;
+
   // -- 全局通知 --
   notice: string | null;
   notify: (msg: string) => void;
@@ -65,6 +70,10 @@ export const useStore = create<AppState>((set) => ({
   // Cookie
   cookieStatus: null,
   setCookieStatus: (c) => set({ cookieStatus: c }),
+
+  // 网络状态
+  online: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  setOnline: (b) => set({ online: b }),
 
   // 通知
   notice: null,
