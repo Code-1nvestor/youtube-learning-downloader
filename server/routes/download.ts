@@ -16,6 +16,9 @@ import type { CreateDownloadRequest } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
 
+/** YouTube videoId 格式：11 位 [\w-] 字符 */
+const VIDEO_ID_RE = /^[\w-]{11}$/;
+
 function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
 ) {
@@ -46,6 +49,11 @@ export function createDownloadRouter(
       for (const [i, task] of body.tasks.entries()) {
         if (!task.videoId || typeof task.videoId !== 'string') {
           throw new AppError('MISSING_PARAM', `tasks[${i}].videoId 为空或非字符串`);
+        }
+        if (!VIDEO_ID_RE.test(task.videoId)) {
+          throw new AppError('INVALID_PARAM', `tasks[${i}].videoId 格式非法（需 11 位 [\\w-] 字符）`, {
+            received: task.videoId,
+          });
         }
         if (!task.title || typeof task.title !== 'string') {
           throw new AppError('MISSING_PARAM', `tasks[${i}].title 为空或非字符串`);

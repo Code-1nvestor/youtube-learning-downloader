@@ -45,10 +45,12 @@ export class NamingService {
   }
 }
 
-/** 文件名安全处理：替换非法字符、截断长度 */
+/** 文件名安全处理：替换非法字符、过滤路径遍历序列、截断长度 */
 function sanitize(text: string): string {
   return text
     .replace(ILLEGAL_CHARS, '_')
+    // 防止路径遍历：过滤 ".." 序列（含被替换为 _.._ 的变体）
+    .replace(/\.{2,}/g, '_')
     .trim()
     .slice(0, MAX_NAME_LENGTH)
     .trim();
