@@ -26,9 +26,12 @@ export interface ClassifiedQuery {
 }
 
 const VIDEO_PATTERNS = [
-  /[?&]v=[\w-]{6,}/, // youtube.com/watch?v=xxxx
-  /(?:^|\/\/)(?:www\.)?youtu\.be\/[\w-]{6,}/, // youtu.be/xxxx
-  /\/shorts\/[\w-]{6,}/, // youtube.com/shorts/xxxx
+  // youtube.com/watch?v=xxxx（锚定域名，防止 evil.com/watch?v=xxxx 误判）
+  /(?:^|\/\/)(?:www\.|m\.)?youtube\.com\/watch\?[^\s]*v=[\w-]{6,}/,
+  // youtu.be/xxxx（已锚定域名）
+  /(?:^|\/\/)(?:www\.)?youtu\.be\/[\w-]{6,}/,
+  // youtube.com/shorts/xxxx（锚定域名）
+  /(?:^|\/\/)(?:www\.|m\.)?youtube\.com\/shorts\/[\w-]{6,}/,
 ];
 
 const CHANNEL_PATTERNS = [
