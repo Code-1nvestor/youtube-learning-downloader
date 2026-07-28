@@ -75,7 +75,7 @@ export class CookieService {
    * 从上传的 Netscape cookie 文本配置 Cookie。
    * 写入服务端 .cookies/cookies.txt，并验证基本格式。
    *
-   * @throws {AppError} INVALID_URL -- 内容格式不合法
+   * @throws {AppError} INVALID_PARAM -- 内容格式不合法
    */
   setFromFile(content: string): void {
     this.validateNetscapeFormat(content);
@@ -95,13 +95,13 @@ export class CookieService {
   /**
    * 配置为从浏览器自动读取 Cookie。
    *
-   * @throws {AppError} INVALID_URL -- 指定浏览器在当前系统不可用
+   * @throws {AppError} INVALID_PARAM -- 指定浏览器在当前系统不可用
    */
   setFromBrowser(browser: 'chrome' | 'edge' | 'firefox' | 'brave' | 'safari'): void {
     // macOS 才有 Safari，其余系统指定 Safari 视为错误
     if (browser === 'safari' && !process.platform.startsWith('darwin')) {
       throw new AppError(
-        'INVALID_URL',
+        'INVALID_PARAM',
         'Safari Cookie 仅在 macOS 上可用',
         { platform: process.platform },
       );
@@ -145,7 +145,7 @@ export class CookieService {
   private validateNetscapeFormat(content: string): void {
     const trimmed = content.trim();
     if (trimmed.length === 0) {
-      throw new AppError('INVALID_URL', 'Cookie 文件内容为空');
+      throw new AppError('INVALID_PARAM', 'Cookie 文件内容为空');
     }
 
     const lines = trimmed.split('\n');
@@ -166,7 +166,7 @@ export class CookieService {
 
     if (!validCookieLine) {
       throw new AppError(
-        'INVALID_URL',
+        'INVALID_PARAM',
         'Cookie 文件格式不合法：需要 Netscape 格式（tab 分隔 7 字段）',
         {
           hint: '可使用浏览器扩展 "Get cookies.txt LOCALLY" 导出',

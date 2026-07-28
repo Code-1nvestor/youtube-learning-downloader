@@ -24,6 +24,7 @@
 
 import { runProcess, BinaryNotFoundError } from './process.ts';
 import { classifyQuery } from './url-classifier.ts';
+import { translateYtDlpError } from './yt-dlp-errors.ts';
 import { AppError } from '../types/errors.ts';
 import type { CookieArg } from '../types/auth.ts';
 import type {
@@ -230,7 +231,7 @@ export class YtDlpService {
       });
 
       if (result.exitCode !== 0) {
-        throw this.translateYtDlpError(result.stderr, contextMessage);
+        throw translateYtDlpError(result.stderr, contextMessage);
       }
       return result;
     } catch (err) {
@@ -255,50 +256,6 @@ export class YtDlpService {
     }
     const url = args[args.length - 1]!;
     return [...args.slice(0, -1), cookieArg.flag, cookieArg.value, url];
-  }
-
-  /**
-   * yt-dlp stderr → AppError 翻译表。
-   * 维护说明：模式串来自 yt-dlp 实际输出，YouTube 侧文案变化时需同步更新。
-   */
-  private translateYtDlpError(stderr: string, context: string): AppError {
-    const text = stderr.toLowerCase();
-
-    if (text.includes('video unavailable') || text.includes('private video')) {
-      return new AppError('VIDEO_UNAVAILABLE', '视频不可用（已删除/私有/地区限制）', {
-        stderr: tail(stderr),
-      });
-    }
-    if (text.includes('the playlist does not exist') || text.includes('playlist') && text.includes('unavailable')) {
-      return new AppError('PLAYLIST_UNAVAILABLE', '播放列表不存在或无访问权限', {
-        stderr: tail(stderr),
-      });
-    }
-    if (text.includes('http error 429') || text.includes('too many requests')) {
-      return new AppError('RATE_LIMITED', '请求过于频繁，触发了 YouTube 风控，请稍后重试或配置 Cookie', {
-        stderr: tail(stderr),
-      });
-    }
-    // YouTube 机器人验证：需要浏览器 Cookie 证明非机器人（真实高频场景，2024+ 常见）
-    if (text.includes('sign in to confirm') || text.includes('not a bot')) {
-      return new AppError('RATE_LIMITED', 'YouTube 要求进行人机验证。请通过 /api/auth/cookie 配置浏览器 Cookie 后重试', {
-        stderr: tail(stderr),
-      });
-    }
-    if (
-      text.includes('name or service not known') ||
-      text.includes('temporary failure in name resolution') ||
-      text.includes('timed out') ||
-      text.includes('unable to download')
-    ) {
-      return new AppError('NETWORK_ERROR', '网络连接失败（请检查代理设置）', {
-        stderr: tail(stderr),
-      });
-    }
-    // 兜底：保留 stderr 尾部便于排查
-    return new AppError('UNKNOWN', `${context}: yt-dlp 返回了未识别的错误`, {
-      stderr: tail(stderr),
-    });
   }
 
   // ——————————————————————————————————————————
@@ -436,10 +393,4 @@ function buildQualityLabel(f: RawFormat, hasVideo: boolean): string {
   if (!hasVideo) return 'audio only';
   const base = f.height ? `${f.height}p` : (f.format_note ?? 'unknown');
   return f.fps && f.fps > 30 ? `${base}${Math.round(f.fps)}` : base;
-}
-
-/** 截取 stderr 尾部（错误关键信息通常在最后几行），限制长度防爆日志 */
-function tail(text: string, maxChars = 500): string {
-  const trimmed = text.trim();
-  return trimmed.length > maxChars ? trimmed.slice(-maxChars) : trimmed;
 }

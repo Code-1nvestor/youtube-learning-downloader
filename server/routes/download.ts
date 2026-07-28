@@ -9,23 +9,16 @@
  * - formats 接口复用 YtDlpService.resolve（--dump-json 已包含格式信息）
  */
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router } from 'express';
 import type { YtDlpService } from '../core/yt-dlp.service.ts';
 import type { QueueService } from '../services/queue.service.ts';
+import { asyncHandler } from '../core/utils.ts';
 import type { CreateDownloadRequest } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
 
 /** YouTube videoId 格式：11 位 [\w-] 字符 */
 const VIDEO_ID_RE = /^[\w-]{11}$/;
-
-function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    fn(req, res, next).catch(next);
-  };
-}
 
 export function createDownloadRouter(
   ytDlpService: YtDlpService,

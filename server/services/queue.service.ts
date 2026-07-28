@@ -243,10 +243,10 @@ export class QueueService {
   pause(id: string): void {
     const task = this.tasks.get(id);
     if (!task) {
-      throw new AppError('INVALID_URL', `任务不存在: ${id}`, undefined, 404);
+      throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (task.status !== 'downloading' && task.status !== 'queued') {
-      throw new AppError('INVALID_URL', `任务当前状态(${task.status})不可暂停`);
+      throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可暂停`);
     }
 
     // 如果正在下载，终止子进程
@@ -269,10 +269,10 @@ export class QueueService {
   resume(id: string): void {
     const task = this.tasks.get(id);
     if (!task) {
-      throw new AppError('INVALID_URL', `任务不存在: ${id}`, undefined, 404);
+      throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (task.status !== 'paused' && task.status !== 'failed') {
-      throw new AppError('INVALID_URL', `任务当前状态(${task.status})不可恢复`);
+      throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可恢复`);
     }
 
     task.status = 'queued';
@@ -286,7 +286,7 @@ export class QueueService {
   cancel(id: string): void {
     const task = this.tasks.get(id);
     if (!task) {
-      throw new AppError('INVALID_URL', `任务不存在: ${id}`, undefined, 404);
+      throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
 
     // 终止子进程
@@ -317,10 +317,10 @@ export class QueueService {
   remove(id: string): void {
     const task = this.tasks.get(id);
     if (!task) {
-      throw new AppError('INVALID_URL', `任务不存在: ${id}`, undefined, 404);
+      throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (task.status === 'downloading') {
-      throw new AppError('INVALID_URL', '下载中的任务不可直接移除，请先取消');
+      throw new AppError('INVALID_PARAM', '下载中的任务不可直接移除，请先取消');
     }
 
     this.tasks.delete(id);
@@ -337,6 +337,10 @@ export class QueueService {
       // 找到最早入队的 queued 任务
       const nextTask = this.findNextQueued();
       if (!nextTask) break;
+
+      // 提前递增计数：executeTask 是 async 的，若在协程内才 ++，
+      // 同步 while 循环看不到变化，可能突破并发上限。
+      this.activeCount++;
 
       // 异步启动（不 await：tryStartNext 本身是同步的）
       void this.executeTask(nextTask);
@@ -358,7 +362,7 @@ export class QueueService {
   private async executeTask(task: DownloadTask): Promise<void> {
     const controller = new AbortController();
     this.controllers.set(task.id, controller);
-    this.activeCount++;
+    // activeCount 已在 tryStartNext() 中递增，此处不再 ++
     task.status = 'downloading';
     task.progress = 0;
     this.persistTask(task);
