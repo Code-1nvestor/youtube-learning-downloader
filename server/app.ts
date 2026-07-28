@@ -69,7 +69,7 @@ export function createApp(
 function notFoundHandler(_req: Request, res: Response): void {
   res
     .status(404)
-    .json(fail(new AppError('INVALID_URL', '接口不存在', undefined, 404)));
+    .json(fail(new AppError('NOT_FOUND', '接口不存在')));
 }
 
 /**

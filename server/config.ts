@@ -72,9 +72,10 @@ export function loadConfig(): AppConfig {
       DEFAULTS.resolveTimeoutMs,
     ),
     downloadPath: process.env.DOWNLOAD_PATH ?? defaultDownloadPath,
-    maxConcurrent: parseIntWithFallback(
-      process.env.MAX_CONCURRENT,
-      DEFAULTS.maxConcurrent,
+    maxConcurrent: clamp(
+      parseIntWithFallback(process.env.MAX_CONCURRENT, DEFAULTS.maxConcurrent),
+      1,
+      8,
     ),
     namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
     dbPath: process.env.DB_PATH ?? defaultDbPath,
@@ -86,4 +87,9 @@ function parseIntWithFallback(value: string | undefined, fallback: number): numb
   if (value === undefined) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** 将数值限制在 [min, max] 区间内 */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

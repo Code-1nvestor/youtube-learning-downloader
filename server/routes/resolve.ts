@@ -11,19 +11,11 @@
  * - 路由层只做"参数校验 + 调用服务 + 包装响应"，不含业务逻辑。
  */
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router } from 'express';
 import type { YtDlpService } from '../core/yt-dlp.service.ts';
+import { asyncHandler } from '../core/utils.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
-
-/** async 路由包装器：把 reject 的错误交给 Express 错误中间件（Express 4 不自动捕获） */
-function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    fn(req, res, next).catch(next);
-  };
-}
 
 export function createResolveRouter(service: YtDlpService): Router {
   const router = Router();

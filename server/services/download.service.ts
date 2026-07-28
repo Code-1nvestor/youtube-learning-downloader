@@ -19,7 +19,7 @@
  */
 
 import { runProcessStreaming } from '../core/process.ts';
-import { AppError } from '../types/errors.ts';
+import { translateDownloadError } from '../core/yt-dlp-errors.ts';
 import type { CookieArg } from '../types/auth.ts';
 import type { DownloadTask, ProgressInfo } from '../types/download.ts';
 
@@ -79,7 +79,7 @@ export class DownloadService {
 
     if (result.exitCode !== 0) {
       // 翻译 yt-dlp 错误（复用 yt-dlp.service.ts 的错误模式）
-      throw this.translateError(result.stderr, task.title);
+      throw translateDownloadError(result.stderr, task.title);
     }
   }
 
@@ -198,32 +198,4 @@ export class DownloadService {
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GiB`;
   }
-
-  // ——————————————————————————————————————————
-  // 错误翻译
-  // ——————————————————————————————————————————
-
-  private translateError(stderr: string, title: string): AppError {
-    const text = stderr.toLowerCase();
-
-    if (text.includes('sign in to confirm') || text.includes('not a bot')) {
-      return new AppError('RATE_LIMITED', 'YouTube 要求人机验证，请配置 Cookie 后重试', { stderr: tail(stderr) });
-    }
-    if (text.includes('video unavailable') || text.includes('private video')) {
-      return new AppError('VIDEO_UNAVAILABLE', `视频不可用: ${title}`, { stderr: tail(stderr) });
-    }
-    if (text.includes('http error 429') || text.includes('too many requests')) {
-      return new AppError('RATE_LIMITED', '请求频率过高，请稍后重试', { stderr: tail(stderr) });
-    }
-    if (text.includes('no space left')) {
-      return new AppError('DISK_FULL', '磁盘空间不足', { stderr: tail(stderr) });
-    }
-
-    return new AppError('DOWNLOAD_FAILED', `下载失败: ${title}`, { stderr: tail(stderr) });
-  }
-}
-
-function tail(text: string, maxChars = 500): string {
-  const trimmed = text.trim();
-  return trimmed.length > maxChars ? trimmed.slice(-maxChars) : trimmed;
 }

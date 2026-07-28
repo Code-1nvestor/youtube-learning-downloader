@@ -11,19 +11,12 @@
  * - file 模式接收文件内容字符串（前端可走 multipart 或 base64）
  */
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router } from 'express';
 import type { CookieService } from '../services/cookie.service.ts';
+import { asyncHandler } from '../core/utils.ts';
 import type { SetCookieFileRequest, SetCookieBrowserRequest } from '../types/auth.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
-
-function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    fn(req, res, next).catch(next);
-  };
-}
 
 export function createAuthRouter(cookieService: CookieService): Router {
   const router = Router();

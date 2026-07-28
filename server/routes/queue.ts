@@ -10,18 +10,9 @@
  * 所有写操作成功后返回更新后的队列状态，减少前端额外轮询。
  */
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router } from 'express';
 import type { QueueService } from '../services/queue.service.ts';
-import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
-
-function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    fn(req, res, next).catch(next);
-  };
-}
 
 export function createQueueRouter(queueService: QueueService): Router {
   const router = Router();
