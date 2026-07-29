@@ -10,6 +10,7 @@
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { resolveToolBinary } from './core/bundled-tools.ts';
 
 export interface AppConfig {
   /** HTTP 服务端口 */
@@ -30,6 +31,8 @@ export interface AppConfig {
   dbPath: string;
   /** 是否在 API 错误响应中附带 details（开发环境开启便于调试） */
   isDev: boolean;
+  /** 生产环境前端构建目录 */
+  webDistPath: string;
 }
 
 const DEFAULTS: AppConfig = {
@@ -42,6 +45,7 @@ const DEFAULTS: AppConfig = {
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
   dbPath: '',
   isDev: process.env.NODE_ENV !== 'production',
+  webDistPath: '',
 };
 
 /** 尝试加载项目根目录的 .env（不存在则静默跳过） */
@@ -65,8 +69,8 @@ export function loadConfig(): AppConfig {
 
   return {
     port: parseIntWithFallback(process.env.PORT, DEFAULTS.port),
-    ytDlpBinary: process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary,
-    ffmpegBinary: process.env.FFMPEG_BINARY ?? DEFAULTS.ffmpegBinary,
+    ytDlpBinary: resolveToolBinary('yt-dlp', process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary),
+    ffmpegBinary: resolveToolBinary('ffmpeg', process.env.FFMPEG_BINARY ?? DEFAULTS.ffmpegBinary),
     resolveTimeoutMs: parseIntWithFallback(
       process.env.RESOLVE_TIMEOUT_MS,
       DEFAULTS.resolveTimeoutMs,
@@ -79,6 +83,7 @@ export function loadConfig(): AppConfig {
     namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
     dbPath: process.env.DB_PATH ?? defaultDbPath,
     isDev: DEFAULTS.isDev,
+    webDistPath: process.env.WEB_DIST_PATH ?? path.resolve(process.cwd(), 'client', 'dist'),
   };
 }
 

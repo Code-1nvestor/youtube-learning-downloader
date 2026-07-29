@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "tsx watch --node-options=--experimental-sqlite server/index.ts",
     "start": "tsx --node-options=--experimental-sqlite server/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/url-classifier.test.ts tests/naming.service.test.ts"
   },
   "dependencies": {
     "express": "^4.21.2"

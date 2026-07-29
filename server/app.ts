@@ -16,6 +16,8 @@ import express, {
   type Response,
   type NextFunction,
 } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { AppConfig } from './config.ts';
 import type { YtDlpService } from './core/yt-dlp.service.ts';
 import type { QueueService } from './services/queue.service.ts';
@@ -56,6 +58,18 @@ export function createApp(
   app.use('/api/auth', createAuthRouter(cookieService));
   app.use('/api/subtitle', createSubtitleRouter(subtitleService));
   app.use('/api/history', createHistoryRouter(historyService));
+
+  // In production the backend serves the Vite build, so the desktop app needs one local service.
+  if (!config.isDev && fs.existsSync(config.webDistPath)) {
+    app.use(express.static(config.webDistPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(config.webDistPath, 'index.html'));
+    });
+  }
 
   // -- 404 --
   app.use(notFoundHandler);

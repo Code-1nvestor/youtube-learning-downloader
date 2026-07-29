@@ -61,6 +61,7 @@ async function main(): Promise<void> {
   // 初始化下载服务链
   const downloadService = new DownloadService({
     binary: config.ytDlpBinary,
+    ffmpegBinary: config.ffmpegBinary,
     getCookieArg: () => cookieService.getArg(),
   });
   const namingService = new NamingService();

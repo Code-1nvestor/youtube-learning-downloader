@@ -33,16 +33,20 @@ export interface DownloadCallbacks {
 export interface DownloadServiceOptions {
   /** yt-dlp 可执行文件名或路径 */
   binary: string;
+  /** ffmpeg executable or directory, used by packaged builds. */
+  ffmpegBinary?: string;
   /** Cookie 参数提供者（可选，运行时动态读取） */
   getCookieArg?: () => CookieArg | undefined;
 }
 
 export class DownloadService {
   private readonly binary: string;
+  private readonly ffmpegBinary?: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
 
   constructor(options: DownloadServiceOptions) {
     this.binary = options.binary;
+    this.ffmpegBinary = options.ffmpegBinary;
     this.getCookieArg = options.getCookieArg;
   }
 
@@ -100,6 +104,10 @@ export class DownloadService {
     // 输出路径模板
     // yt-dlp 的 -o 直接接收最终路径（已由 naming.service 计算好）
     args.push('-o', task.outputPath);
+
+    if (this.ffmpegBinary && this.ffmpegBinary !== 'ffmpeg') {
+      args.push('--ffmpeg-location', this.ffmpegBinary);
+    }
 
     // 进度输出：JSON 格式，每行一个更新
     // 字段：downloaded_bytes, total_bytes, speed, eta, fragment_index...
