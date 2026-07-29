@@ -254,7 +254,6 @@ export class QueueService {
     if (controller) {
       controller.abort();
       this.controllers.delete(id);
-      this.activeCount--;
     }
 
     task.status = 'paused';
@@ -295,7 +294,6 @@ export class QueueService {
     if (controller) {
       controller.abort();
       this.controllers.delete(id);
-      this.activeCount--;
     }
 
     task.status = 'cancelled';
@@ -417,6 +415,7 @@ export class QueueService {
       }
     } finally {
       this.controllers.delete(task.id);
+      // 统一在执行流程结束时释放并发槽位，避免 pause()/cancel() 重复扣减。
       this.activeCount--;
       // 任务结束，尝试启动下一个
       this.tryStartNext();
