@@ -44,6 +44,30 @@ export class BinaryNotFoundError extends Error {
 }
 
 /**
+ * 终止外部命令及其子进程。
+ *
+ * yt-dlp 在合并音视频时可能启动 ffmpeg。Windows 的 child.kill() 不会可靠地
+ * 终止整棵进程树，因此使用 taskkill /T；其他平台继续使用 Node 信号机制。
+ */
+function terminateProcessTree(child: ChildProcess, force: boolean): void {
+  if (!child.pid) return;
+
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    killer.on('error', () => {
+      // taskkill 不可用时仍尝试终止直接子进程，避免静默失效。
+      if (!child.killed) child.kill(force ? 'SIGKILL' : 'SIGTERM');
+    });
+    return;
+  }
+
+  child.kill(force ? 'SIGKILL' : 'SIGTERM');
+}
+
+/**
  * 执行外部命令并收集全部输出。
  *
  * @throws {BinaryNotFoundError} 命令不存在
@@ -76,9 +100,9 @@ export async function runProcess(
     const killTimer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill('SIGTERM');
+      terminateProcessTree(child, false);
       setTimeout(() => {
-        if (!child.killed) child.kill('SIGKILL');
+        if (!child.killed) terminateProcessTree(child, true);
       }, 1_000).unref();
       reject(
         new AppError('TIMEOUT', `命令执行超时（${timeoutMs}ms）: ${command}`, {
@@ -200,13 +224,13 @@ export async function runProcessStreaming(
     // AbortSignal 处理：外部调用 abort() 时终止子进程
     if (signal) {
       if (signal.aborted) {
-        child.kill('SIGTERM');
+        terminateProcessTree(child, false);
       } else {
         signal.addEventListener('abort', () => {
-          child.kill('SIGTERM');
+          terminateProcessTree(child, false);
           // 1 秒后强杀兜底
           setTimeout(() => {
-            if (!child.killed) child.kill('SIGKILL');
+            if (!child.killed) terminateProcessTree(child, true);
           }, 1_000).unref();
         }, { once: true });
       }

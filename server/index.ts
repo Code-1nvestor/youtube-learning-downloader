@@ -84,6 +84,7 @@ async function main(): Promise<void> {
   // 字幕服务（复用 ytDlpService 的解析能力 + cookie 配置）
   const subtitleService = new SubtitleService(ytDlpService, {
     binary: config.ytDlpBinary,
+    outputRoot: config.downloadPath,
     getCookieArg: () => cookieService.getArg(),
   });
 
@@ -99,7 +100,8 @@ async function main(): Promise<void> {
     historyService,
   );
 
-  const server = app.listen(config.port, () => {
+  // 个人桌面应用只提供本机服务，避免局域网设备直接调用下载和 Cookie 接口。
+  const server = app.listen(config.port, '127.0.0.1', () => {
     console.log(`[startup] 学习资料下载器后端已启动: http://localhost:${config.port}`);
     console.log(`[startup] 健康检查: http://localhost:${config.port}/api/health`);
 
