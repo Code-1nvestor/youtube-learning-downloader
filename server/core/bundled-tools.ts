@@ -12,8 +12,12 @@ export function resolveToolBinary(
   }
 
   const executableName = process.platform === 'win32' ? `${toolName}.exe` : toolName;
-  const bundledPath = path.resolve(baseDir, 'resources', 'bin', executableName);
-  if (fs.existsSync(bundledPath)) return bundledPath;
+  const candidates = [
+    path.resolve(baseDir, 'bin', executableName),
+    path.resolve(baseDir, 'resources', 'bin', executableName),
+  ];
+  const bundledPath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (bundledPath) return bundledPath;
 
   return configured || toolName;
 }

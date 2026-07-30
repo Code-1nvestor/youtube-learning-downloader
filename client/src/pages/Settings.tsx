@@ -8,17 +8,19 @@
  */
 
 import { useState, useEffect } from 'react';
-import { api, ApiError, type CookieStatus } from '../api';
+import { api, ApiError, type CookieStatus, type HealthStatus } from '../api';
 import { useStore } from '../store';
 import { useTheme, type ThemeMode } from '../hooks/useTheme';
 
 export function Settings() {
   const { cookieStatus, setCookieStatus, notify } = useStore();
   const [loading, setLoading] = useState(false);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
 
   // 初始加载 Cookie 状态
   useEffect(() => {
     api.getCookieStatus().then(setCookieStatus).catch(() => {});
+    api.getHealth().then(setHealth).catch(() => {});
   }, [setCookieStatus]);
 
   const refreshStatus = async () => {
@@ -62,6 +64,8 @@ export function Settings() {
     <div className="space-y-6">
       {/* 主题设置 */}
       <ThemeSection />
+
+      <RuntimeSection health={health} />
 
       {/* Cookie 配置 */}
       <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
@@ -142,6 +146,46 @@ export function Settings() {
         </p>
       </section>
     </div>
+  );
+}
+
+function RuntimeSection({ health }: { health: HealthStatus | null }) {
+  const tools = [
+    { name: 'yt-dlp', status: health?.runtime.ytDlp },
+    { name: 'ffmpeg', status: health?.runtime.ffmpeg },
+  ];
+
+  return (
+    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">运行环境</h2>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+        下载器启动时会自动检查必要工具。
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {tools.map(({ name, status }) => (
+          <div
+            key={name}
+            className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{name}</span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  status?.available
+                    ? 'bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400'
+                    : 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400'
+                }`}
+              >
+                {status?.available ? '可用' : health ? '不可用' : '检查中'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 break-all">
+              {status?.version ?? status?.message ?? '正在读取状态…'}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

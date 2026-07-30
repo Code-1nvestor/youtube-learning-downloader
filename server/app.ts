@@ -24,6 +24,7 @@ import type { QueueService } from './services/queue.service.ts';
 import type { CookieService } from './services/cookie.service.ts';
 import type { SubtitleService } from './services/subtitle.service.ts';
 import type { HistoryService } from './services/history.service.ts';
+import type { RuntimeStatus } from './types/runtime.ts';
 import { createResolveRouter } from './routes/resolve.ts';
 import { createDownloadRouter } from './routes/download.ts';
 import { createQueueRouter } from './routes/queue.ts';
@@ -40,6 +41,7 @@ export function createApp(
   cookieService: CookieService,
   subtitleService: SubtitleService,
   historyService: HistoryService,
+  runtimeStatus: RuntimeStatus,
 ): Express {
   const app = express();
 
@@ -48,7 +50,7 @@ export function createApp(
 
   // -- 健康检查（前端联调与部署探活使用）--
   app.get('/api/health', (_req, res) => {
-    res.json(ok({ status: 'ok', uptime: process.uptime() }));
+    res.json(ok({ status: 'ok', uptime: process.uptime(), runtime: runtimeStatus }));
   });
 
   // -- 业务路由 --

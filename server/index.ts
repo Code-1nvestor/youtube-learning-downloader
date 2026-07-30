@@ -22,6 +22,33 @@ import { SubtitleService } from './services/subtitle.service.ts';
 import { HistoryService } from './services/history.service.ts';
 import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
+import { runProcess, BinaryNotFoundError } from './core/process.ts';
+import type { RuntimeToolStatus } from './types/runtime.ts';
+
+async function checkFfmpeg(binary: string): Promise<RuntimeToolStatus> {
+  try {
+    const result = await runProcess(binary, ['-version'], {
+      timeoutMs: 10_000,
+      maxOutputBytes: 1024 * 1024,
+    });
+    if (result.exitCode !== 0) {
+      return { available: false, message: 'ffmpeg 返回了异常结果' };
+    }
+    const firstLine = result.stdout.split(/\r?\n/, 1)[0]?.trim();
+    return {
+      available: true,
+      version: firstLine || '已安装',
+    };
+  } catch (error) {
+    if (error instanceof BinaryNotFoundError) {
+      return { available: false, message: '未找到 ffmpeg' };
+    }
+    return {
+      available: false,
+      message: error instanceof Error ? error.message : 'ffmpeg 检查失败',
+    };
+  }
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -37,7 +64,7 @@ async function main(): Promise<void> {
   }
 
   // Cookie 管理服务（先初始化，供 yt-dlp 与 download 服务注入参数）
-  const cookieService = new CookieService(process.cwd());
+  const cookieService = new CookieService(config.appDataPath);
 
   const ytDlpService = new YtDlpService({
     binary: config.ytDlpBinary,
@@ -46,16 +73,25 @@ async function main(): Promise<void> {
   });
 
   // 环境自检：失败不阻断启动，让 API 层返回结构化错误引导用户
+  let ytDlpStatus: RuntimeToolStatus;
   try {
     const version = await ytDlpService.checkAvailable();
     console.log(`[startup] yt-dlp 版本: ${version}`);
+    ytDlpStatus = { available: true, version };
   } catch (err) {
     if (isAppError(err)) {
       console.warn(`[startup] 警告: ${err.message}`);
       console.warn('[startup] 服务将继续启动，/api/resolve 会返回 YT_DLP_MISSING 错误');
+      ytDlpStatus = { available: false, message: err.message };
     } else {
       throw err;
     }
+  }
+  const ffmpegStatus = await checkFfmpeg(config.ffmpegBinary);
+  if (ffmpegStatus.available) {
+    console.log(`[startup] ffmpeg: ${ffmpegStatus.version}`);
+  } else {
+    console.warn(`[startup] 警告: ${ffmpegStatus.message}`);
   }
 
   // 初始化下载服务链
@@ -99,6 +135,7 @@ async function main(): Promise<void> {
     cookieService,
     subtitleService,
     historyService,
+    { ytDlp: ytDlpStatus, ffmpeg: ffmpegStatus },
   );
 
   // 个人桌面应用只提供本机服务，避免局域网设备直接调用下载和 Cookie 接口。

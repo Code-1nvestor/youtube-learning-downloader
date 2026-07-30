@@ -33,6 +33,10 @@ export interface AppConfig {
   isDev: boolean;
   /** 生产环境前端构建目录 */
   webDistPath: string;
+  /** 应用数据根目录（数据库、Cookie 等可写数据） */
+  appDataPath: string;
+  /** 应用资源根目录（前端、yt-dlp、ffmpeg 等只读资源） */
+  resourcePath: string;
 }
 
 const DEFAULTS: AppConfig = {
@@ -46,6 +50,8 @@ const DEFAULTS: AppConfig = {
   dbPath: '',
   isDev: process.env.NODE_ENV !== 'production',
   webDistPath: '',
+  appDataPath: '',
+  resourcePath: '',
 };
 
 /** 尝试加载项目根目录的 .env（不存在则静默跳过） */
@@ -62,15 +68,24 @@ function tryLoadEnvFile(): void {
 export function loadConfig(): AppConfig {
   tryLoadEnvFile();
 
-  // 下载目录默认值：项目根目录下的 downloads/
-  const defaultDownloadPath = path.resolve(process.cwd(), 'downloads');
-  // 数据库默认值：项目根目录下的 data/app.db
-  const defaultDbPath = path.resolve(process.cwd(), 'data', 'app.db');
+  const appDataPath = path.resolve(process.env.APP_DATA_PATH ?? process.cwd());
+  const resourcePath = path.resolve(process.env.APP_RESOURCE_PATH ?? process.cwd());
+  // 开发环境默认放在项目目录；桌面版由 Electron 传入用户数据/下载目录。
+  const defaultDownloadPath = path.resolve(appDataPath, 'downloads');
+  const defaultDbPath = path.resolve(appDataPath, 'data', 'app.db');
 
   return {
     port: parseIntWithFallback(process.env.PORT, DEFAULTS.port),
-    ytDlpBinary: resolveToolBinary('yt-dlp', process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary),
-    ffmpegBinary: resolveToolBinary('ffmpeg', process.env.FFMPEG_BINARY ?? DEFAULTS.ffmpegBinary),
+    ytDlpBinary: resolveToolBinary(
+      'yt-dlp',
+      process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary,
+      resourcePath,
+    ),
+    ffmpegBinary: resolveToolBinary(
+      'ffmpeg',
+      process.env.FFMPEG_BINARY ?? DEFAULTS.ffmpegBinary,
+      resourcePath,
+    ),
     resolveTimeoutMs: parseIntWithFallback(
       process.env.RESOLVE_TIMEOUT_MS,
       DEFAULTS.resolveTimeoutMs,
@@ -83,7 +98,9 @@ export function loadConfig(): AppConfig {
     namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
     dbPath: process.env.DB_PATH ?? defaultDbPath,
     isDev: DEFAULTS.isDev,
-    webDistPath: process.env.WEB_DIST_PATH ?? path.resolve(process.cwd(), 'client', 'dist'),
+    webDistPath: process.env.WEB_DIST_PATH ?? path.resolve(resourcePath, 'dist', 'client'),
+    appDataPath,
+    resourcePath,
   };
 }
 

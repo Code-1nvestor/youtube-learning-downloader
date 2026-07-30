@@ -124,6 +124,21 @@ export interface CookieStatus {
   updatedAt?: string;
 }
 
+export interface RuntimeToolStatus {
+  available: boolean;
+  version?: string;
+  message?: string;
+}
+
+export interface HealthStatus {
+  status: 'ok';
+  uptime: number;
+  runtime: {
+    ytDlp: RuntimeToolStatus;
+    ffmpeg: RuntimeToolStatus;
+  };
+}
+
 export interface CreateDownloadTaskInput {
   videoId: string;
   title: string;
@@ -236,6 +251,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // ==========================================
 
 export const api = {
+  getHealth: () => request<HealthStatus>('/health'),
+
   // 解析
   resolve: (url: string) =>
     request<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`),
