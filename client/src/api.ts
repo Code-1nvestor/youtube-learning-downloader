@@ -204,6 +204,22 @@ export interface CreateDownloadTaskInput {
   estimatedBytes?: number;
 }
 
+export type DownloadConflictPolicy = 'reject' | 'rename';
+
+export interface DownloadConflict {
+  inputIndex: number;
+  title: string;
+  outputPath: string;
+  reason: 'existing_task' | 'file_exists' | 'batch_duplicate';
+  existingTaskId?: string;
+}
+
+export interface CreateDownloadResponse {
+  taskIds: string[];
+  conflicts: DownloadConflict[];
+  renamed: { inputIndex: number; title: string; outputPath: string }[];
+}
+
 // ==========================================
 // API 错误
 // ==========================================
@@ -323,10 +339,10 @@ export const api = {
     request<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`),
 
   // 下载
-  createDownload: (tasks: CreateDownloadTaskInput[]) =>
-    request<{ taskIds: string[] }>('/download', {
+  createDownload: (tasks: CreateDownloadTaskInput[], conflictPolicy: DownloadConflictPolicy = 'reject') =>
+    request<CreateDownloadResponse>('/download', {
       method: 'POST',
-      body: JSON.stringify({ tasks }),
+      body: JSON.stringify({ tasks, conflictPolicy }),
     }),
 
   getFormats: (url: string) =>

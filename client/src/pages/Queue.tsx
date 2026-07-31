@@ -14,6 +14,7 @@ import { useEffect, useRef } from 'react';
 import { api, ApiError, type DownloadTask } from '../api';
 import { useStore } from '../store';
 import { getErrorGuidance } from '../utils/error-actions';
+import { DownloadFileActions } from '../components/DownloadFileActions';
 
 const POLL_INTERVAL = 1500;
 
@@ -197,6 +198,7 @@ function TaskItem({
 
       {/* 操作按钮 */}
       <div className="flex gap-1 flex-shrink-0">
+        {task.status === 'completed' && <DownloadFileActions taskId={task.id} />}
         {(task.status === 'downloading' || task.status === 'queued' || task.status === 'retrying') && (
           <ActionButton onClick={() => onAction(task, 'pause')} title="暂停">
             ⏸

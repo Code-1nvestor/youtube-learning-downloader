@@ -2,6 +2,7 @@
  * routes/history.ts - 下载历史路由
  *
  * GET    /api/history           分页查询历史记录（completed/failed/cancelled）
+ * GET    /api/history/:id       查询单条终态任务（桌面文件操作使用）
  * DELETE /api/history/:id       删除单条历史记录
  * DELETE /api/history           清空所有历史记录
  *
@@ -24,6 +25,19 @@ export function createHistoryRouter(historyService: HistoryService): Router {
     const pageSize = parsePageSize(req.query.pageSize);
     const result = historyService.getHistory(page, pageSize);
     res.json(ok(result));
+  });
+
+  // -- 查询单条终态任务：桌面主进程只凭任务 ID 获取可信输出路径 --
+  router.get('/:id', (req, res) => {
+    const id = req.params.id;
+    if (!id) {
+      throw new AppError('MISSING_PARAM', '缺少历史记录 ID');
+    }
+    const task = historyService.getHistoryItem(id);
+    if (!task) {
+      throw new AppError('NOT_FOUND', `历史记录不存在: ${id}`);
+    }
+    res.json(ok(task));
   });
 
   // -- 清空所有历史（必须在 /:id 之前注册，否则会被 :id 匹配）--

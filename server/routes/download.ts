@@ -19,6 +19,7 @@ import { ok } from '../types/result.ts';
 
 /** YouTube videoId 格式：11 位 [\w-] 字符 */
 const VIDEO_ID_RE = /^[\w-]{11}$/;
+const ALLOWED_CONTAINERS = new Set(['mp4', 'webm', 'mp3', 'm4a']);
 
 export function createDownloadRouter(
   ytDlpService: YtDlpService,
@@ -38,6 +39,10 @@ export function createDownloadRouter(
         });
       }
 
+      if (body.conflictPolicy !== undefined && !['reject', 'rename'].includes(body.conflictPolicy)) {
+        throw new AppError('INVALID_PARAM', 'conflictPolicy 仅支持 reject 或 rename');
+      }
+
       // 校验每个任务的基本字段
       for (const [i, task] of body.tasks.entries()) {
         if (!task.videoId || typeof task.videoId !== 'string') {
@@ -51,10 +56,15 @@ export function createDownloadRouter(
         if (!task.title || typeof task.title !== 'string') {
           throw new AppError('MISSING_PARAM', `tasks[${i}].title 为空或非字符串`);
         }
+        if (
+          task.container !== undefined &&
+          (typeof task.container !== 'string' || !ALLOWED_CONTAINERS.has(task.container))
+        ) {
+          throw new AppError('INVALID_PARAM', `tasks[${i}].container 仅支持 mp4、webm、mp3 或 m4a`);
+        }
       }
 
-      const taskIds = queueService.enqueue(body.tasks);
-      res.json(ok({ taskIds }));
+      res.json(ok(queueService.enqueue(body.tasks, body.conflictPolicy ?? 'reject')));
     }),
   );
 

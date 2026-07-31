@@ -55,7 +55,7 @@ test('pause and cancel never exceed the configured concurrency', async () => {
   );
 
   try {
-    const taskIds = queue.enqueue([
+    const { taskIds } = queue.enqueue([
       { videoId: 'video-1', title: 'one' },
       { videoId: 'video-2', title: 'two' },
       { videoId: 'video-3', title: 'three' },
@@ -137,7 +137,7 @@ test('automatically retries transient failures and eventually completes', async 
   );
 
   try {
-    const [taskId] = queue.enqueue([{ videoId: 'retry-video', title: 'retry' }]);
+    const [taskId] = queue.enqueue([{ videoId: 'retry-video', title: 'retry' }]).taskIds;
     await waitUntil(() => queue.getTask(taskId!)?.status === 'completed');
     assert.equal(flaky.attempts, 2);
     assert.equal(queue.getTask(taskId!)?.retryCount, 1);
@@ -161,11 +161,80 @@ test('does not automatically retry non-transient failures', async () => {
   );
 
   try {
-    const [taskId] = queue.enqueue([{ videoId: 'unavailable-video', title: 'unavailable' }]);
+    const [taskId] = queue.enqueue([{ videoId: 'unavailable-video', title: 'unavailable' }]).taskIds;
     await waitUntil(() => queue.getTask(taskId!)?.status === 'failed');
     assert.equal(unavailable.attempts, 1);
     assert.equal(queue.getTask(taskId!)?.retryCount, 0);
     assert.equal(queue.getTask(taskId!)?.errorCode, 'VIDEO_UNAVAILABLE');
+  } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test('rejects an existing output atomically and can safely rename it', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-conflict-'));
+  const existingPath = path.join(outputRoot, 'lesson.mp4');
+  fs.writeFileSync(existingPath, 'existing download');
+  const controlled = new ControlledDownloadService();
+  const queue = new QueueService(
+    controlled as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+  );
+
+  try {
+    const rejected = queue.enqueue([{ videoId: 'existing-id', title: 'lesson' }]);
+    assert.equal(rejected.taskIds.length, 0);
+    assert.equal(rejected.conflicts.length, 1);
+    assert.equal(rejected.conflicts[0]?.reason, 'file_exists');
+    assert.equal(queue.getAllTasks().length, 0);
+
+    const renamed = queue.enqueue(
+      [{ videoId: 'existing-id', title: 'lesson' }],
+      'rename',
+    );
+    assert.equal(renamed.taskIds.length, 1);
+    assert.equal(renamed.conflicts.length, 0);
+    assert.equal(renamed.renamed[0]?.outputPath, path.join(outputRoot, 'lesson (2).mp4'));
+    assert.equal(fs.readFileSync(existingPath, 'utf8'), 'existing download');
+
+    const taskId = renamed.taskIds[0]!;
+    await waitUntil(() => controlled.started.includes(taskId));
+    queue.cancel(taskId);
+    await waitUntil(() => controlled.active === 0);
+  } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test('rejects a duplicate inside one batch without creating partial tasks', () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-batch-conflict-'));
+  const queue = new QueueService(
+    new ControlledDownloadService() as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+  );
+
+  try {
+    const result = queue.enqueue([
+      { videoId: 'batch-one', title: 'same' },
+      { videoId: 'batch-two', title: 'same' },
+    ]);
+    assert.equal(result.taskIds.length, 0);
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(result.conflicts[0]?.inputIndex, 1);
+    assert.equal(result.conflicts[0]?.reason, 'batch_duplicate');
+    assert.equal(queue.getAllTasks().length, 0);
   } finally {
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }

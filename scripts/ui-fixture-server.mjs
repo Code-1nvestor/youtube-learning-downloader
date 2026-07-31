@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +12,19 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const clientDir = path.join(root, 'dist', 'client');
 const port = Number.parseInt(process.env.PORT ?? '43921', 10);
 const app = express();
+
+const fixtureDesktopBridge = `
+<script>
+window.desktop = {
+  selectDirectory: async () => null,
+  openLogsDirectory: async () => ({ path: 'C:\\\\Fixture\\\\logs' }),
+  openDownload: async () => ({ path: 'C:\\\\Fixture\\\\lesson.mp4' }),
+  revealDownload: async () => ({ path: 'C:\\\\Fixture\\\\lesson.mp4' }),
+  restartApp: async () => true
+};
+</script>`;
+const fixtureIndex = fs.readFileSync(path.join(clientDir, 'index.html'), 'utf8')
+  .replace('</head>', `${fixtureDesktopBridge}</head>`);
 
 app.use(express.json());
 
@@ -166,8 +180,35 @@ app.post('/api/subtitle/download', (_request, response) => {
   });
 });
 
-app.post('/api/download', (_request, response) => {
-  response.json({ success: true, data: { taskIds: ['fixture-task'] } });
+app.post('/api/download', (request, response) => {
+  if (request.body?.conflictPolicy !== 'rename') {
+    response.json({
+      success: true,
+      data: {
+        taskIds: [],
+        conflicts: [{
+          inputIndex: 0,
+          title: fixtureVideo.title,
+          outputPath: 'C:\\Users\\Demo\\Downloads\\UI 验收课程.mp4',
+          reason: 'file_exists',
+        }],
+        renamed: [],
+      },
+    });
+    return;
+  }
+  response.json({
+    success: true,
+    data: {
+      taskIds: ['fixture-task'],
+      conflicts: [],
+      renamed: [{
+        inputIndex: 0,
+        title: fixtureVideo.title,
+        outputPath: 'C:\\Users\\Demo\\Downloads\\UI 验收课程 (2).mp4',
+      }],
+    },
+  });
 });
 
 app.get('/api/queue', (_request, response) => {
@@ -218,15 +259,71 @@ app.get('/api/queue', (_request, response) => {
         error: 'YouTube 要求人机验证',
         errorCode: 'RATE_LIMITED',
         createdAt: new Date().toISOString(),
+      }, {
+        id: '11111111-1111-4111-8111-111111111111',
+        videoId: fixtureVideo.id,
+        title: '已完成课程文件操作演示',
+        formatId: '22',
+        container: 'mp4',
+        outputPath: 'C:\\Users\\Demo\\Downloads\\lesson.mp4',
+        subtitleLangs: [],
+        subtitleMode: 'none',
+        autoSubtitle: false,
+        status: 'completed',
+        progress: 100,
+        speed: '',
+        eta: '',
+        downloadedBytes: 20_971_520,
+        totalBytes: 20_971_520,
+        estimatedBytes: 20_971_520,
+        retryCount: 0,
+        maxRetries: 2,
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
       }],
       active: 0,
       waiting: 1,
-      completed: 0,
+      completed: 1,
       failed: 1,
     },
   });
 });
 
+app.get('/api/history', (_request, response) => {
+  response.json({
+    success: true,
+    data: {
+      tasks: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        videoId: fixtureVideo.id,
+        title: '已完成课程文件操作演示',
+        formatId: '22',
+        container: 'mp4',
+        outputPath: 'C:\\Users\\Demo\\Downloads\\lesson.mp4',
+        subtitleLangs: [],
+        subtitleMode: 'none',
+        autoSubtitle: false,
+        status: 'completed',
+        progress: 100,
+        speed: '',
+        eta: '',
+        downloadedBytes: 20_971_520,
+        totalBytes: 20_971_520,
+        estimatedBytes: 20_971_520,
+        retryCount: 0,
+        maxRetries: 2,
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+    },
+  });
+});
+
+app.get('/', (_request, response) => response.type('html').send(fixtureIndex));
 app.use(express.static(clientDir));
 app.get('*', (_request, response) => response.sendFile(path.join(clientDir, 'index.html')));
 

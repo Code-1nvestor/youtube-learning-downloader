@@ -14,6 +14,8 @@ import type { DbContext } from '../db/database.ts';
 import { rowToTask } from '../db/task-serializer.ts';
 import type { DownloadTask } from '../types/download.ts';
 
+const HISTORY_STATUSES = new Set<DownloadTask['status']>(['completed', 'failed', 'cancelled']);
+
 export interface HistoryPage {
   tasks: DownloadTask[];
   total: number;
@@ -52,6 +54,15 @@ export class HistoryService {
       pageSize: safeSize,
       totalPages: Math.max(1, Math.ceil(total / safeSize)),
     };
+  }
+
+  /** 按 ID 查询单条终态任务，供桌面端安全定位下载结果。 */
+  getHistoryItem(id: string): DownloadTask | undefined {
+    if (!this.ctx) return undefined;
+    const row = this.ctx.stmts.getTaskById.get(id) as unknown;
+    if (!row) return undefined;
+    const task = rowToTask(row as never);
+    return HISTORY_STATUSES.has(task.status) ? task : undefined;
   }
 
   /** 删除单条历史记录 */

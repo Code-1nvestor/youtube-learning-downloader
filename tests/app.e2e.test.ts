@@ -193,6 +193,21 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     assert.equal(blockedPayload.success, false);
     assert.equal(blockedPayload.error?.code, 'PATH_NOT_ALLOWED');
 
+    const invalidContainer = await fetch(`${harness.baseUrl}/api/download`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tasks: [{ videoId: 'YE7VzlLtp-4', title: 'unsafe extension', container: 'exe' }],
+      }),
+    });
+    assert.equal(invalidContainer.status, 400);
+    const invalidContainerPayload = await invalidContainer.json() as {
+      success: boolean;
+      error?: { code: string };
+    };
+    assert.equal(invalidContainerPayload.success, false);
+    assert.equal(invalidContainerPayload.error?.code, 'INVALID_PARAM');
+
     const created = await apiRequest<{ taskIds: string[] }>(harness.baseUrl, '/api/download', {
       method: 'POST',
       body: JSON.stringify({
@@ -212,6 +227,14 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     assert.equal(cancelledTask.status, 'cancelled');
     await access(completedTask.outputPath);
     assert.ok((await stat(completedTask.outputPath)).size > 0);
+
+    const historyItem = await apiRequest<DownloadTask>(
+      harness.baseUrl,
+      `/api/history/${completedId}`,
+    );
+    assert.equal(historyItem.id, completedId);
+    assert.equal(historyItem.status, 'completed');
+    assert.equal(historyItem.outputPath, completedTask.outputPath);
 
     const firstHistory = await apiRequest<{ tasks: DownloadTask[]; total: number }>(
       harness.baseUrl,
@@ -235,6 +258,66 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
       new Set(restartedHistory.tasks.map((task) => task.id)),
       new Set([completedId, cancelledId]),
     );
+  } finally {
+    await harness?.close();
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('HTTP download creation rejects conflicts atomically and safely renames on confirmation', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yld-app-conflict-'));
+  const databasePath = path.join(tempDir, 'app.db');
+  let harness: Harness | undefined;
+
+  try {
+    harness = await createHarness(tempDir, databasePath);
+    const first = await apiRequest<{
+      taskIds: string[];
+      conflicts: unknown[];
+      renamed: unknown[];
+    }>(harness.baseUrl, '/api/download', {
+      method: 'POST',
+      body: JSON.stringify({
+        tasks: [{ videoId: 'YE7VzlLtp-4', title: 'duplicate lesson', container: 'mp4' }],
+      }),
+    });
+    const firstId = first.taskIds[0];
+    assert.ok(firstId);
+    const firstTask = await waitForTask(harness.baseUrl, firstId, 'completed');
+    await access(firstTask.outputPath);
+
+    const rejected = await apiRequest<{
+      taskIds: string[];
+      conflicts: { reason: string; outputPath: string }[];
+      renamed: unknown[];
+    }>(harness.baseUrl, '/api/download', {
+      method: 'POST',
+      body: JSON.stringify({
+        tasks: [{ videoId: 'YE7VzlLtp-4', title: 'duplicate lesson', container: 'mp4' }],
+      }),
+    });
+    assert.equal(rejected.taskIds.length, 0);
+    assert.equal(rejected.conflicts[0]?.reason, 'file_exists');
+    assert.equal(rejected.conflicts[0]?.outputPath, firstTask.outputPath);
+
+    const renamed = await apiRequest<{
+      taskIds: string[];
+      conflicts: unknown[];
+      renamed: { outputPath: string }[];
+    }>(harness.baseUrl, '/api/download', {
+      method: 'POST',
+      body: JSON.stringify({
+        conflictPolicy: 'rename',
+        tasks: [{ videoId: 'YE7VzlLtp-4', title: 'duplicate lesson', container: 'mp4' }],
+      }),
+    });
+    assert.equal(renamed.conflicts.length, 0);
+    assert.match(renamed.renamed[0]?.outputPath ?? '', /duplicate lesson \(2\)\.mp4$/);
+    const renamedId = renamed.taskIds[0];
+    assert.ok(renamedId);
+    const renamedTask = await waitForTask(harness.baseUrl, renamedId, 'completed');
+    await access(renamedTask.outputPath);
+    assert.notEqual(renamedTask.outputPath, firstTask.outputPath);
   } finally {
     await harness?.close();
     await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

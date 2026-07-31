@@ -4,12 +4,14 @@ const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
+const { createDownloadActions } = require('./download-actions.cjs');
 
 let mainWindow = null;
 let backendProcess = null;
 let backendLog = null;
 let shuttingDown = false;
 let appOrigin = null;
+let downloadActions = null;
 
 // 固定端口可让 localStorage / Service Worker 等浏览器数据跨启动复用。
 // 端口被占用时自动退回随机端口，避免应用完全无法启动。
@@ -225,6 +227,16 @@ function registerIpcHandlers() {
     return error ? { path: logsDir, error } : { path: logsDir };
   });
 
+  ipcMain.handle('desktop:open-download', async (_event, taskId) => {
+    if (!downloadActions) return { error: '桌面文件服务尚未就绪' };
+    return downloadActions.openDownload(taskId);
+  });
+
+  ipcMain.handle('desktop:reveal-download', async (_event, taskId) => {
+    if (!downloadActions) return { error: '桌面文件服务尚未就绪' };
+    return downloadActions.revealDownload(taskId);
+  });
+
   ipcMain.handle('desktop:restart-app', () => {
     shuttingDown = true;
     app.relaunch();
@@ -233,11 +245,22 @@ function registerIpcHandlers() {
   });
 }
 
+async function loadHistoryTask(taskId) {
+  if (!appOrigin) throw new Error('本机服务尚未启动');
+  const response = await fetch(`${appOrigin}/api/history/${encodeURIComponent(taskId)}`);
+  const payload = await response.json();
+  if (!response.ok || !payload?.success || !payload.data) {
+    throw new Error(payload?.error?.message ?? `读取下载记录失败（HTTP ${response.status}）`);
+  }
+  return payload.data;
+}
+
 async function startDesktopApp() {
   const port = await getAvailablePort();
   if (!port) throw new Error('无法分配本地端口');
 
   appOrigin = `http://127.0.0.1:${port}`;
+  downloadActions = createDownloadActions({ loadTask: loadHistoryTask, shell });
   startBackend(port);
   await waitForHealth(`${appOrigin}/api/health`);
   createWindow(appOrigin);

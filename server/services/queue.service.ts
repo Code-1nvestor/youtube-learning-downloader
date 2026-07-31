@@ -40,6 +40,11 @@ import type {
   QueueStatus,
   ProgressInfo,
   NamingContext,
+  CreateDownloadResponse,
+  DownloadConflict,
+  DownloadConflictPolicy,
+  DownloadConflictReason,
+  RenamedDownload,
 } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
 
@@ -55,6 +60,23 @@ export interface QueueServiceOptions {
 }
 
 const RETRYABLE_ERROR_CODES = new Set(['NETWORK_ERROR', 'TIMEOUT']);
+const DUPLICATE_BLOCKING_STATUSES = new Set<DownloadTask['status']>([
+  'queued',
+  'downloading',
+  'retrying',
+  'paused',
+  'failed',
+]);
+
+interface PlannedDownload {
+  input: CreateDownloadTaskInput;
+  outputPath: string;
+}
+
+interface OccupiedOutput {
+  reason: DownloadConflictReason;
+  existingTaskId?: string;
+}
 
 export function getRetryDelayMs(retryCount: number): number {
   return Math.min(2_000 * (2 ** Math.max(retryCount - 1, 0)), 30_000);
@@ -181,37 +203,28 @@ export class QueueService {
    * 批量创建下载任务并入队。
    * @returns 创建的任务 ID 列表
    */
-  enqueue(inputs: CreateDownloadTaskInput[]): string[] {
+  enqueue(
+    inputs: CreateDownloadTaskInput[],
+    conflictPolicy: DownloadConflictPolicy = 'reject',
+  ): CreateDownloadResponse {
     const taskIds: string[] = [];
     const now = new Date().toISOString();
     const date = now.slice(0, 10);
+    const { plans, conflicts, renamed } = this.planDownloads(inputs, conflictPolicy, date);
 
-    for (const input of inputs) {
+    // reject 模式保证批量请求的原子性：有任意冲突时，一个任务也不创建。
+    if (conflicts.length > 0) {
+      return { taskIds, conflicts, renamed: [] };
+    }
+
+    // 先创建所有父目录，避免中途失败后留下半批任务。
+    for (const plan of plans) {
+      fs.mkdirSync(path.dirname(plan.outputPath), { recursive: true });
+    }
+
+    for (const { input, outputPath } of plans) {
       const taskId = randomUUID();
       const container = input.container ?? 'mp4';
-
-      // 计算输出路径
-      const namingCtx: NamingContext = {
-        course: input.playlistTitle,
-        date,
-        num: input.playlistIndex?.toString().padStart(2, '0'),
-        title: input.title,
-        ext: container,
-      };
-      const relativePath = this.namingService.apply(this.options.namingTemplate, namingCtx);
-      const outputPath = path.resolve(this.options.downloadPath, relativePath);
-      const relativeToRoot = path.relative(this.options.downloadPath, outputPath);
-      if (
-        relativeToRoot === '..' ||
-        relativeToRoot.startsWith(`..${path.sep}`) ||
-        path.isAbsolute(relativeToRoot)
-      ) {
-        throw new AppError('PATH_NOT_ALLOWED', '命名规则生成的路径超出下载目录');
-      }
-
-      // 确保目录存在
-      const dir = path.dirname(outputPath);
-      fs.mkdirSync(dir, { recursive: true });
 
       const task: DownloadTask = {
         id: taskId,
@@ -247,7 +260,81 @@ export class QueueService {
     // 尝试启动排队任务
     this.tryStartNext();
 
-    return taskIds;
+    return { taskIds, conflicts: [], renamed };
+  }
+
+  private planDownloads(
+    inputs: CreateDownloadTaskInput[],
+    conflictPolicy: DownloadConflictPolicy,
+    date: string,
+  ): { plans: PlannedDownload[]; conflicts: DownloadConflict[]; renamed: RenamedDownload[] } {
+    const occupied = new Map<string, OccupiedOutput>();
+    const plans: PlannedDownload[] = [];
+    const conflicts: DownloadConflict[] = [];
+    const renamed: RenamedDownload[] = [];
+
+    for (const task of this.tasks.values()) {
+      if (!DUPLICATE_BLOCKING_STATUSES.has(task.status)) continue;
+      occupied.set(normalizeOutputPath(task.outputPath), {
+        reason: 'existing_task',
+        existingTaskId: task.id,
+      });
+    }
+
+    inputs.forEach((input, inputIndex) => {
+      const baseOutputPath = this.buildOutputPath(input, date);
+      const baseKey = normalizeOutputPath(baseOutputPath);
+      const occupiedOutput = occupied.get(baseKey);
+      const conflict = fs.existsSync(baseOutputPath)
+        ? { reason: 'file_exists' as const }
+        : occupiedOutput;
+
+      if (conflict && conflictPolicy === 'reject') {
+        conflicts.push({
+          inputIndex,
+          title: input.title,
+          outputPath: baseOutputPath,
+          reason: conflict.reason,
+          ...(conflict.existingTaskId ? { existingTaskId: conflict.existingTaskId } : {}),
+        });
+        // 后续同名输入仍应被标记为批内重复。
+        occupied.set(baseKey, { reason: 'batch_duplicate' });
+        return;
+      }
+
+      const outputPath = conflict
+        ? findAvailableOutputPath(baseOutputPath, occupied)
+        : baseOutputPath;
+      if (outputPath !== baseOutputPath) {
+        renamed.push({ inputIndex, title: input.title, outputPath });
+      }
+      occupied.set(normalizeOutputPath(outputPath), { reason: 'batch_duplicate' });
+      plans.push({ input, outputPath });
+    });
+
+    return { plans, conflicts, renamed };
+  }
+
+  private buildOutputPath(input: CreateDownloadTaskInput, date: string): string {
+    const container = input.container ?? 'mp4';
+    const namingCtx: NamingContext = {
+      course: input.playlistTitle,
+      date,
+      num: input.playlistIndex?.toString().padStart(2, '0'),
+      title: input.title,
+      ext: container,
+    };
+    const relativePath = this.namingService.apply(this.options.namingTemplate, namingCtx);
+    const outputPath = path.resolve(this.options.downloadPath, relativePath);
+    const relativeToRoot = path.relative(this.options.downloadPath, outputPath);
+    if (
+      relativeToRoot === '..' ||
+      relativeToRoot.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeToRoot)
+    ) {
+      throw new AppError('PATH_NOT_ALLOWED', '命名规则生成的路径超出下载目录');
+    }
+    return outputPath;
   }
 
   // ------------------------------------------
@@ -541,4 +628,23 @@ export class QueueService {
         return 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
     }
   }
+}
+
+function normalizeOutputPath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLocaleLowerCase('en-US') : resolved;
+}
+
+function findAvailableOutputPath(
+  baseOutputPath: string,
+  occupied: ReadonlyMap<string, OccupiedOutput>,
+): string {
+  const parsed = path.parse(baseOutputPath);
+  for (let suffix = 2; suffix < 10_000; suffix += 1) {
+    const candidate = path.join(parsed.dir, `${parsed.name} (${suffix})${parsed.ext}`);
+    if (!fs.existsSync(candidate) && !occupied.has(normalizeOutputPath(candidate))) {
+      return candidate;
+    }
+  }
+  throw new AppError('DOWNLOAD_CONFLICT', '无法为重复下载生成可用文件名');
 }

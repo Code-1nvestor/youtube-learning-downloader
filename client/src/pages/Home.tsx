@@ -88,8 +88,8 @@ export function Home() {
       )}
 
       {/* 解析结果 */}
-      {resolveResult && <ResolveResultView result={resolveResult} onDownloaded={() => {
-        notify('已加入下载队列');
+      {resolveResult && <ResolveResultView result={resolveResult} onDownloaded={(message) => {
+        notify(message);
         setView('queue');
       }} />}
     </div>
@@ -129,7 +129,7 @@ function ResolveResultView({
   onDownloaded,
 }: {
   result: ResolveResult;
-  onDownloaded: () => void;
+  onDownloaded: (message: string) => void;
 }) {
   if (result.kind === 'video' && result.videos.length === 1) {
     return <SingleVideoDownload key={result.videos[0].id} video={result.videos[0]} onDownloaded={onDownloaded} />;
@@ -143,7 +143,7 @@ function SingleVideoDownload({
   onDownloaded,
 }: {
   video: ResolveResult['videos'][number];
-  onDownloaded: () => void;
+  onDownloaded: (message: string) => void;
 }) {
   const [container, setContainer] = useState('mp4');
   const [quality, setQuality] = useState('720p');
@@ -184,8 +184,8 @@ function SingleVideoDownload({
         subtitleMode,
         autoSubtitle: subtitleMode !== 'none' && autoSubtitle,
       };
-      await api.createDownload([task]);
-      onDownloaded();
+      const message = await submitDownloadTasks([task], notify);
+      if (message) onDownloaded(message);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : '创建下载任务失败';
       notify(msg);
@@ -446,7 +446,7 @@ function MultiVideoDownload({
 }: {
   title: string;
   videos: ResolveResult['videos'];
-  onDownloaded: () => void;
+  onDownloaded: (message: string) => void;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set(videos.map((_, i) => i)));
   const [container, setContainer] = useState('mp4');
@@ -492,8 +492,8 @@ function MultiVideoDownload({
 
     setSubmitting(true);
     try {
-      await api.createDownload(tasks);
-      onDownloaded();
+      const message = await submitDownloadTasks(tasks, notify);
+      if (message) onDownloaded(message);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : '批量下载失败';
       notify(msg);
@@ -675,4 +675,39 @@ function triggerTextDownload(content: string, fileName: string): void {
   link.download = fileName;
   link.click();
   setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
+async function submitDownloadTasks(
+  tasks: CreateDownloadTaskInput[],
+  notify: (message: string) => void,
+): Promise<string | null> {
+  const initial = await api.createDownload(tasks);
+  if (initial.conflicts.length === 0) {
+    return initial.taskIds.length === 1
+      ? '已加入下载队列'
+      : `已加入 ${initial.taskIds.length} 个下载任务`;
+  }
+
+  const preview = initial.conflicts
+    .slice(0, 3)
+    .map((conflict) => `• ${conflict.title}`)
+    .join('\n');
+  const remaining = initial.conflicts.length > 3
+    ? `\n另有 ${initial.conflicts.length - 3} 项`
+    : '';
+  const confirmed = window.confirm(
+    `检测到 ${initial.conflicts.length} 个同名任务或已有文件：\n\n${preview}${remaining}\n\n` +
+    '为避免覆盖，当前整批尚未创建。是否给冲突文件自动添加“(2)”序号后继续？',
+  );
+
+  if (!confirmed) {
+    notify('已取消，本次没有创建任何下载任务');
+    return null;
+  }
+
+  const retried = await api.createDownload(tasks, 'rename');
+  if (retried.conflicts.length > 0 || retried.taskIds.length === 0) {
+    throw new ApiError('DOWNLOAD_CONFLICT', '重复文件处理失败，请检查下载目录后重试');
+  }
+  return `已加入 ${retried.taskIds.length} 个任务，其中 ${retried.renamed.length} 个已安全另存`;
 }

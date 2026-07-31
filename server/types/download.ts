@@ -97,6 +97,26 @@ export interface ProgressInfo {
 export interface CreateDownloadRequest {
   /** 单个或多个下载任务 */
   tasks: CreateDownloadTaskInput[];
+  /** 冲突处理：默认拒绝整批；rename 会为冲突文件自动添加序号 */
+  conflictPolicy?: DownloadConflictPolicy;
+}
+
+export type DownloadConflictPolicy = 'reject' | 'rename';
+
+export type DownloadConflictReason = 'existing_task' | 'file_exists' | 'batch_duplicate';
+
+export interface DownloadConflict {
+  inputIndex: number;
+  title: string;
+  outputPath: string;
+  reason: DownloadConflictReason;
+  existingTaskId?: string;
+}
+
+export interface RenamedDownload {
+  inputIndex: number;
+  title: string;
+  outputPath: string;
 }
 
 /** 单个下载任务输入 */
@@ -122,6 +142,10 @@ export interface CreateDownloadTaskInput {
 /** POST /api/download 响应 */
 export interface CreateDownloadResponse {
   taskIds: string[];
+  /** reject 模式发生冲突时整批不创建，并在这里返回冲突详情 */
+  conflicts: DownloadConflict[];
+  /** rename 模式中被安全改名的任务 */
+  renamed: RenamedDownload[];
 }
 
 /** GET /api/queue 响应 */

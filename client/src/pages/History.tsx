@@ -15,6 +15,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError, type DownloadTask, type HistoryPage } from '../api';
 import { useStore } from '../store';
 import { getErrorGuidance } from '../utils/error-actions';
+import { DownloadFileActions } from '../components/DownloadFileActions';
 
 const PAGE_SIZE = 20;
 
@@ -210,13 +211,16 @@ function HistoryItem({
         )}
       </div>
 
-      <button
-        onClick={() => onDelete(task)}
-        title="删除记录"
-        className="w-7 h-7 flex items-center justify-center rounded text-sm text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 hover:text-red-500 dark:text-red-400 transition-colors flex-shrink-0"
-      >
-        🗑
-      </button>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {task.status === 'completed' && <DownloadFileActions taskId={task.id} />}
+        <button
+          onClick={() => onDelete(task)}
+          title="删除记录"
+          className="w-7 h-7 flex items-center justify-center rounded text-sm text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 hover:text-red-500 dark:text-red-400 transition-colors flex-shrink-0"
+        >
+          🗑
+        </button>
+      </div>
     </div>
   );
 }
