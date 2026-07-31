@@ -24,6 +24,7 @@ import type { QueueService } from './services/queue.service.ts';
 import type { CookieService } from './services/cookie.service.ts';
 import type { SubtitleService } from './services/subtitle.service.ts';
 import type { HistoryService } from './services/history.service.ts';
+import type { SettingsService } from './services/settings.service.ts';
 import type { RuntimeStatus } from './types/runtime.ts';
 import { createResolveRouter } from './routes/resolve.ts';
 import { createDownloadRouter } from './routes/download.ts';
@@ -31,6 +32,7 @@ import { createQueueRouter } from './routes/queue.ts';
 import { createAuthRouter } from './routes/auth.ts';
 import { createSubtitleRouter } from './routes/subtitle.ts';
 import { createHistoryRouter } from './routes/history.ts';
+import { createSettingsRouter } from './routes/settings.ts';
 import { AppError, isAppError } from './types/errors.ts';
 import { ok, fail } from './types/result.ts';
 
@@ -41,6 +43,7 @@ export function createApp(
   cookieService: CookieService,
   subtitleService: SubtitleService,
   historyService: HistoryService,
+  settingsService: SettingsService,
   runtimeStatus: RuntimeStatus,
 ): Express {
   const app = express();
@@ -60,6 +63,7 @@ export function createApp(
   app.use('/api/auth', createAuthRouter(cookieService));
   app.use('/api/subtitle', createSubtitleRouter(subtitleService));
   app.use('/api/history', createHistoryRouter(historyService));
+  app.use('/api/settings', createSettingsRouter(settingsService, queueService, subtitleService));
 
   // In production the backend serves the Vite build, so the desktop app needs one local service.
   if (!config.isDev && fs.existsSync(config.webDistPath)) {

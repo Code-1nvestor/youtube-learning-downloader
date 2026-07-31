@@ -56,7 +56,7 @@ export class QueueService {
   private readonly controllers = new Map<string, AbortController>();
   private readonly downloadService: DownloadService;
   private readonly namingService: NamingService;
-  private readonly options: QueueServiceOptions;
+  private options: QueueServiceOptions;
   private readonly db: DbContext | null;
   private activeCount = 0;
 
@@ -68,8 +68,14 @@ export class QueueService {
   ) {
     this.downloadService = downloadService;
     this.namingService = namingService;
-    this.options = options;
+    this.options = { ...options, downloadPath: path.resolve(options.downloadPath) };
     this.db = db;
+  }
+
+  /** 后续新任务使用新设置；已运行任务不被强制中断。 */
+  updateOptions(options: QueueServiceOptions): void {
+    this.options = { ...options, downloadPath: path.resolve(options.downloadPath) };
+    this.tryStartNext();
   }
 
   // ------------------------------------------
@@ -175,6 +181,14 @@ export class QueueService {
       };
       const relativePath = this.namingService.apply(this.options.namingTemplate, namingCtx);
       const outputPath = path.resolve(this.options.downloadPath, relativePath);
+      const relativeToRoot = path.relative(this.options.downloadPath, outputPath);
+      if (
+        relativeToRoot === '..' ||
+        relativeToRoot.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relativeToRoot)
+      ) {
+        throw new AppError('PATH_NOT_ALLOWED', '命名规则生成的路径超出下载目录');
+      }
 
       // 确保目录存在
       const dir = path.dirname(outputPath);

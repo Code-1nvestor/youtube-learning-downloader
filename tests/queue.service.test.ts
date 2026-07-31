@@ -77,3 +77,25 @@ test('pause and cancel never exceed the configured concurrency', async () => {
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }
 });
+
+test('rejects an output path that escapes the download root', () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-path-'));
+  const queue = new QueueService(
+    new ControlledDownloadService() as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      downloadPath: outputRoot,
+      namingTemplate: '../outside/{title}.{ext}',
+    },
+  );
+
+  try {
+    assert.throws(
+      () => queue.enqueue([{ videoId: 'video-path', title: 'unsafe' }]),
+      (error: unknown) => error instanceof AppError && error.code === 'PATH_NOT_ALLOWED',
+    );
+  } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});

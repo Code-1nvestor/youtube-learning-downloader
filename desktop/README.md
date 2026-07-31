@@ -50,5 +50,8 @@ SmartScreen 提示。正式对外分发前应配置可信代码签名证书，�
 ## 数据位置
 
 - 数据库、Cookie、日志：Electron 的用户数据目录
-- 下载文件：系统“下载”目录下的 `YouTube Learning Downloader`
+- 下载文件：首次使用系统“下载”目录下的 `YouTube Learning Downloader`，之后可在设置页修改
 - 后端日志：用户数据目录下的 `logs/backend.log`
+
+设置页的“浏览…”按钮通过受限 Electron IPC 只打开目录选择器，不向网页开放
+Node.js 或任意文件系统访问权限。

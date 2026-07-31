@@ -31,6 +31,8 @@ export interface PreparedStatements {
   deleteTask: ReturnType<DatabaseSync['prepare']>;
   clearHistory: ReturnType<DatabaseSync['prepare']>;
   getHistoryCount: ReturnType<DatabaseSync['prepare']>;
+  getSettings: ReturnType<DatabaseSync['prepare']>;
+  upsertSetting: ReturnType<DatabaseSync['prepare']>;
 }
 
 /** 数据库上下文：连接 + 预编译语句 */
@@ -121,6 +123,16 @@ export function initDatabase(dbPath: string): DbContext {
     getHistoryCount: db.prepare(`
       SELECT COUNT(*) as count FROM download_tasks
       WHERE status IN ('completed', 'failed', 'cancelled')
+    `),
+
+    getSettings: db.prepare('SELECT key, value FROM app_settings'),
+
+    upsertSetting: db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
     `),
   };
 

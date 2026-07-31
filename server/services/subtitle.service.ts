@@ -40,7 +40,7 @@ export interface SubtitleServiceOptions {
 
 export class SubtitleService {
   private readonly binary: string;
-  private readonly outputRoot: string;
+  private outputRoot: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly ytDlpService: YtDlpService;
 
@@ -49,6 +49,10 @@ export class SubtitleService {
     this.binary = options.binary;
     this.outputRoot = path.resolve(options.outputRoot);
     this.getCookieArg = options.getCookieArg;
+  }
+
+  updateOutputRoot(outputRoot: string): void {
+    this.outputRoot = path.resolve(outputRoot);
   }
 
   /**

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -186,6 +186,7 @@ function createWindow(url) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -203,6 +204,20 @@ function createWindow(url) {
   void mainWindow.loadURL(url);
 }
 
+function registerIpcHandlers() {
+  ipcMain.handle('desktop:select-directory', async () => {
+    const options = {
+      title: '选择下载目录',
+      defaultPath: app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+}
+
 async function startDesktopApp() {
   const port = await getAvailablePort();
   if (!port) throw new Error('无法分配本地端口');
@@ -216,6 +231,7 @@ async function startDesktopApp() {
 if (hasSingleInstanceLock) {
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    registerIpcHandlers();
     try {
       await startDesktopApp();
     } catch (error) {

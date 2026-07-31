@@ -8,7 +8,13 @@
  */
 
 import { useState, useEffect } from 'react';
-import { api, ApiError, type CookieStatus, type HealthStatus } from '../api';
+import {
+  api,
+  ApiError,
+  type AppSettingsStatus,
+  type CookieStatus,
+  type HealthStatus,
+} from '../api';
 import { useStore } from '../store';
 import { useTheme, type ThemeMode } from '../hooks/useTheme';
 
@@ -64,6 +70,8 @@ export function Settings() {
     <div className="space-y-6">
       {/* 主题设置 */}
       <ThemeSection />
+
+      <DownloadSettingsSection />
 
       <RuntimeSection health={health} />
 
@@ -135,17 +143,147 @@ export function Settings() {
         )}
       </section>
 
-      {/* 下载设置（环境变量配置说明） */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-        <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">下载设置</h2>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          下载路径、命名规则、并发数等设置将在后续版本提供持久化配置
-        </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-          当前可通过 <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">.env</code> 文件配置
-        </p>
-      </section>
     </div>
+  );
+}
+
+function DownloadSettingsSection() {
+  const { notify } = useStore();
+  const [settings, setSettings] = useState<AppSettingsStatus | null>(null);
+  const [downloadPath, setDownloadPath] = useState('');
+  const [maxConcurrent, setMaxConcurrent] = useState(2);
+  const [namingTemplate, setNamingTemplate] = useState('{course}/{date}_{num}_{title}.{ext}');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getSettings()
+      .then((value) => {
+        if (cancelled) return;
+        setSettings(value);
+        setDownloadPath(value.downloadPath);
+        setMaxConcurrent(value.maxConcurrent);
+        setNamingTemplate(value.namingTemplate);
+      })
+      .catch((error) => {
+        if (!cancelled) notify(error instanceof ApiError ? error.message : '读取下载设置失败');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notify]);
+
+  const chooseDirectory = async () => {
+    const selected = await window.desktop?.selectDirectory();
+    if (selected) setDownloadPath(selected);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const value = await api.updateSettings({
+        downloadPath: downloadPath.trim(),
+        maxConcurrent,
+        namingTemplate: namingTemplate.trim(),
+      });
+      setSettings(value);
+      setDownloadPath(value.downloadPath);
+      setMaxConcurrent(value.maxConcurrent);
+      setNamingTemplate(value.namingTemplate);
+      notify(value.persistent ? '下载设置已保存' : '设置已应用，但数据库不可用，重启后会恢复默认值');
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '下载设置保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">下载设置</h2>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            保存后立即用于新加入的任务，正在下载的任务不会被中断。
+          </p>
+        </div>
+        {settings && (
+          <span className={`text-xs px-2 py-0.5 rounded-full ${
+            settings.persistent
+              ? 'bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400'
+              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+          }`}>
+            {settings.persistent ? '已持久化' : '仅本次运行'}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+            下载目录
+          </label>
+          <div className="flex gap-2">
+            <input
+              value={downloadPath}
+              onChange={(event) => setDownloadPath(event.target.value)}
+              placeholder="例如：D:\\学习资料"
+              className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            {window.desktop && (
+              <button
+                type="button"
+                onClick={chooseDirectory}
+                className="shrink-0 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                浏览…
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">目录不存在时会自动创建。</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              同时下载数量
+            </label>
+            <select
+              value={maxConcurrent}
+              onChange={(event) => setMaxConcurrent(Number(event.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              文件命名规则
+            </label>
+            <input
+              value={namingTemplate}
+              onChange={(event) => setNamingTemplate(event.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              可用变量：{'{course}'} {'{date}'} {'{num}'} {'{title}'} {'{quality}'} {'{ext}'}；必须包含 {'{title}'} 和 {'{ext}'}。
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={save}
+            disabled={saving || !settings || !downloadPath.trim() || !namingTemplate.trim()}
+            className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+          >
+            {saving ? '保存中…' : '保存下载设置'}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

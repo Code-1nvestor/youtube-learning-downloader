@@ -139,6 +139,17 @@ export interface HealthStatus {
   };
 }
 
+export interface AppSettingsStatus {
+  downloadPath: string;
+  maxConcurrent: number;
+  namingTemplate: string;
+  persistent: boolean;
+}
+
+export type UpdateAppSettingsInput = Partial<
+  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'namingTemplate'>
+>;
+
 export interface CreateDownloadTaskInput {
   videoId: string;
   title: string;
@@ -252,6 +263,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getHealth: () => request<HealthStatus>('/health'),
+  getSettings: () => request<AppSettingsStatus>('/settings'),
+  updateSettings: (settings: UpdateAppSettingsInput) =>
+    request<AppSettingsStatus>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
 
   // 解析
   resolve: (url: string) =>

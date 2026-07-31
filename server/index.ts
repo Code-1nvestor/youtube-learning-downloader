@@ -20,6 +20,7 @@ import { NamingService } from './services/naming.service.ts';
 import { QueueService } from './services/queue.service.ts';
 import { SubtitleService } from './services/subtitle.service.ts';
 import { HistoryService } from './services/history.service.ts';
+import { SettingsService } from './services/settings.service.ts';
 import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 import { runProcess, BinaryNotFoundError } from './core/process.ts';
@@ -95,6 +96,15 @@ async function main(): Promise<void> {
   }
 
   // 初始化下载服务链
+  const settingsService = new SettingsService(
+    {
+      maxConcurrent: config.maxConcurrent,
+      downloadPath: config.downloadPath,
+      namingTemplate: config.namingTemplate,
+    },
+    dbContext,
+  );
+  const appSettings = settingsService.getSettings();
   const downloadService = new DownloadService({
     binary: config.ytDlpBinary,
     ffmpegBinary: config.ffmpegBinary,
@@ -106,22 +116,22 @@ async function main(): Promise<void> {
     downloadService,
     namingService,
     {
-      maxConcurrent: config.maxConcurrent,
-      downloadPath: config.downloadPath,
-      namingTemplate: config.namingTemplate,
+      maxConcurrent: appSettings.maxConcurrent,
+      downloadPath: appSettings.downloadPath,
+      namingTemplate: appSettings.namingTemplate,
     },
     dbForQueue,
   );
 
-  console.log(`[startup] 下载目录: ${config.downloadPath}`);
-  console.log(`[startup] 最大并发: ${config.maxConcurrent}`);
-  console.log(`[startup] 命名模板: ${config.namingTemplate}`);
+  console.log(`[startup] 下载目录: ${appSettings.downloadPath}`);
+  console.log(`[startup] 最大并发: ${appSettings.maxConcurrent}`);
+  console.log(`[startup] 命名模板: ${appSettings.namingTemplate}`);
   console.log(`[startup] Cookie 状态: ${cookieService.getStatus().source}`);
 
   // 字幕服务（复用 ytDlpService 的解析能力 + cookie 配置）
   const subtitleService = new SubtitleService(ytDlpService, {
     binary: config.ytDlpBinary,
-    outputRoot: config.downloadPath,
+    outputRoot: appSettings.downloadPath,
     getCookieArg: () => cookieService.getArg(),
   });
 
@@ -135,6 +145,7 @@ async function main(): Promise<void> {
     cookieService,
     subtitleService,
     historyService,
+    settingsService,
     { ytDlp: ytDlpStatus, ffmpeg: ffmpegStatus },
   );
 

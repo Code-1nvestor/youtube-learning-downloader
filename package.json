@@ -1,6 +1,6 @@
 {
   "name": "youtube-learning-downloader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "desktop/main.cjs",
   "description": "YouTube 学习资料下载工具（个人学习用途，非商业）",
@@ -18,7 +18,7 @@
     "desktop:pack": "npm run build && electron-builder --dir",
     "desktop:dist": "npm run build && electron-builder --win nsis portable",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/url-classifier.test.ts tests/naming.service.test.ts tests/bundled-tools.test.ts tests/queue.service.test.ts",
+    "test": "node --experimental-sqlite node_modules/tsx/dist/cli.mjs --test tests/url-classifier.test.ts tests/naming.service.test.ts tests/bundled-tools.test.ts tests/queue.service.test.ts tests/settings.service.test.ts",
     "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
@@ -45,6 +45,7 @@
     },
     "files": [
       "main.cjs",
+      "preload.cjs",
       "package.json"
     ],
     "extraResources": [
