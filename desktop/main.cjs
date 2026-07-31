@@ -3,8 +3,12 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
+const os = require('node:os');
 const path = require('node:path');
 const { createDownloadActions } = require('./download-actions.cjs');
+const {
+  createDiagnosticActions,
+} = require('./diagnostics.cjs');
 const {
   clearDesktopWebCaches,
   hasVersionConflict,
@@ -235,6 +239,28 @@ function createWindow(url) {
 }
 
 function registerIpcHandlers() {
+  const appDataPath = app.getPath('userData');
+  const diagnosticActions = createDiagnosticActions({
+    loadApi: loadLocalApiData,
+    showSaveDialog: (options) => (
+      mainWindow ? dialog.showSaveDialog(mainWindow, options) : dialog.showSaveDialog(options)
+    ),
+    appVersion,
+    platform: process.platform,
+    arch: process.arch,
+    osRelease: os.release(),
+    isPackaged: app.isPackaged,
+    paths: {
+      appData: appDataPath,
+      resources: process.resourcesPath,
+      home: app.getPath('home'),
+      temp: app.getPath('temp'),
+      appRoot: path.resolve(__dirname, '..'),
+      documents: app.getPath('documents'),
+      logFile: path.join(appDataPath, 'logs', 'backend.log'),
+    },
+  });
+
   ipcMain.handle('desktop:get-app-version', () => appVersion);
 
   ipcMain.handle('desktop:select-directory', async () => {
@@ -256,6 +282,10 @@ function registerIpcHandlers() {
     return error ? { path: logsDir, error } : { path: logsDir };
   });
 
+  ipcMain.handle('desktop:save-diagnostic-report', async () => {
+    return diagnosticActions.saveReport();
+  });
+
   ipcMain.handle('desktop:open-download', async (_event, taskId) => {
     if (!downloadActions) return { error: '桌面文件服务尚未就绪' };
     return downloadActions.openDownload(taskId);
@@ -272,6 +302,16 @@ function registerIpcHandlers() {
     app.quit();
     return true;
   });
+}
+
+async function loadLocalApiData(route) {
+  if (!appOrigin) throw new Error('本机服务尚未启动');
+  const response = await fetch(`${appOrigin}${route}`);
+  const payload = await response.json();
+  if (!response.ok || !payload?.success || payload.data === undefined) {
+    throw new Error(payload?.error?.message ?? `读取诊断信息失败（HTTP ${response.status}）`);
+  }
+  return payload.data;
 }
 
 async function loadHistoryTask(taskId) {

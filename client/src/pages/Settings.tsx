@@ -564,7 +564,21 @@ function DownloadSettingsSection() {
 function DiagnosticsSection() {
   const { notify } = useStore();
   const [opening, setOpening] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const desktopAvailable = Boolean(window.desktop);
+
+  const saveReport = async () => {
+    if (!window.desktop) return;
+    setGenerating(true);
+    try {
+      const result = await window.desktop.saveDiagnosticReport();
+      if (result.saved) notify(`诊断报告已保存：${result.path ?? '所选位置'}`);
+    } catch {
+      notify('诊断报告生成失败，请改用“打开日志目录”');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const openLogs = async () => {
     if (!window.desktop) return;
@@ -583,16 +597,29 @@ function DiagnosticsSection() {
     <section id="settings-diagnostics" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">诊断与日志</h2>
       <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-        下载失败时可打开应用日志目录，把 backend.log 提供给开发者定位问题。
+        下载失败时可生成脱敏诊断报告，再提供给开发者定位问题。报告只保存到你主动选择的位置，不会自动上传。
       </p>
-      <button
-        type="button"
-        onClick={openLogs}
-        disabled={!desktopAvailable || opening}
-        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
-      >
-        {opening ? '正在打开…' : desktopAvailable ? '打开日志目录' : '仅桌面版可用'}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void saveReport()}
+          disabled={!desktopAvailable || opening || generating}
+          className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+        >
+          {generating ? '正在生成…' : desktopAvailable ? '生成脱敏诊断报告…' : '仅桌面版可用'}
+        </button>
+        <button
+          type="button"
+          onClick={openLogs}
+          disabled={!desktopAvailable || opening || generating}
+          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
+        >
+          {opening ? '正在打开…' : '打开原始日志目录'}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+        报告默认遮蔽 Cookie、认证信息、代理凭据、URL 查询参数和本机完整路径；发送前仍建议自行浏览确认。
+      </p>
     </section>
   );
 }
