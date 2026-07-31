@@ -12,6 +12,7 @@
 import { useState, useCallback } from 'react';
 import { api, ApiError, type ResolveResult, type CreateDownloadTaskInput } from '../api';
 import { useStore } from '../store';
+import { parseSubtitleLanguages } from '../utils/subtitles';
 
 export function Home() {
   const { resolveResult, resolving, error, setResolving, setResolveResult, setError, setView, notify } =
@@ -122,7 +123,7 @@ function SingleVideoDownload({
         ...(video.playlistIndex ? { playlistIndex: video.playlistIndex } : {}),
         container,
         formatId: qualityToFormat(quality, container),
-        subtitleLangs: subtitleMode !== 'none' ? subtitleLangs.split(',').map((s) => s.trim()).filter(Boolean) : [],
+        subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
         subtitleMode,
       };
       await api.createDownload([task]);
@@ -203,6 +204,7 @@ function MultiVideoDownload({
   const [container, setContainer] = useState('mp4');
   const [quality, setQuality] = useState('720p');
   const [subtitleMode, setSubtitleMode] = useState<'none' | 'embed' | 'separate'>('none');
+  const [subtitleLangs, setSubtitleLangs] = useState('zh-Hans,en');
   const [submitting, setSubmitting] = useState(false);
   const { notify } = useStore();
 
@@ -231,7 +233,7 @@ function MultiVideoDownload({
           ...(v.playlistIndex ? { playlistIndex: v.playlistIndex } : {}),
           container,
           formatId: qualityToFormat(quality, container),
-          subtitleLangs: subtitleMode !== 'none' ? ['zh-Hans', 'en'] : [],
+          subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
           subtitleMode,
         };
       });
@@ -299,7 +301,7 @@ function MultiVideoDownload({
 
       {/* 批量配置 */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Field label="格式">
             <select value={container} onChange={(e) => setContainer(e.target.value)} className="select">
               <option value="mp4">MP4</option>
@@ -325,6 +327,16 @@ function MultiVideoDownload({
               <option value="embed">嵌入</option>
               <option value="separate">外挂</option>
             </select>
+          </Field>
+          <Field label="字幕语言">
+            <input
+              type="text"
+              value={subtitleLangs}
+              onChange={(e) => setSubtitleLangs(e.target.value)}
+              disabled={subtitleMode === 'none'}
+              placeholder="zh-Hans,en"
+              className="input disabled:bg-gray-100 dark:disabled:bg-gray-700 dark:bg-gray-700"
+            />
           </Field>
         </div>
         <button
