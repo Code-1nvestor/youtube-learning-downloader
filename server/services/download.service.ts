@@ -109,6 +109,13 @@ export class DownloadService {
       args.push('--ffmpeg-location', this.ffmpegBinary);
     }
 
+    // 输出容器必须由 yt-dlp/ffmpeg 真正处理，不能只修改文件扩展名。
+    if (task.container === 'mp3' || task.container === 'm4a') {
+      args.push('--extract-audio', '--audio-format', task.container);
+    } else if (task.container === 'mp4' || task.container === 'webm') {
+      args.push('--merge-output-format', task.container);
+    }
+
     // 进度输出：JSON 格式，每行一个更新
     // 字段：downloaded_bytes, total_bytes, speed, eta, fragment_index...
     args.push('--newline');

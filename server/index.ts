@@ -131,6 +131,7 @@ async function main(): Promise<void> {
   // 字幕服务（复用 ytDlpService 的解析能力 + cookie 配置）
   const subtitleService = new SubtitleService(ytDlpService, {
     binary: config.ytDlpBinary,
+    ffmpegBinary: config.ffmpegBinary,
     outputRoot: appSettings.downloadPath,
     getCookieArg: () => cookieService.getArg(),
   });

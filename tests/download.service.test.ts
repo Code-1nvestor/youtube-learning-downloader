@@ -45,6 +45,7 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
     'C:\\Downloads\\test.mp4',
   ]);
   assert.ok(args.includes('--ffmpeg-location'));
+  assert.ok(args.includes('--merge-output-format'));
   assert.ok(args.includes('--write-subs'));
   assert.ok(args.includes('--write-auto-subs'));
   assert.ok(args.includes('--convert-subs'));
@@ -53,6 +54,26 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
     'C:\\Data\\cookies.txt',
     'https://www.youtube.com/watch?v=BaW_jenozKc',
   ]);
+});
+
+test('extracts real MP3 and M4A audio instead of only changing the file extension', () => {
+  const service = new DownloadService({ binary: 'yt-dlp' });
+
+  for (const container of ['mp3', 'm4a']) {
+    const args = service.buildDownloadArgs(createTask({
+      container,
+      outputPath: `C:\\Downloads\\audio.${container}`,
+      formatId: 'bestaudio/best',
+    }));
+    const extractIndex = args.indexOf('--extract-audio');
+    assert.ok(extractIndex >= 0);
+    assert.deepEqual(args.slice(extractIndex, extractIndex + 3), [
+      '--extract-audio',
+      '--audio-format',
+      container,
+    ]);
+    assert.equal(args.includes('--merge-output-format'), false);
+  }
 });
 
 test('parses JSON progress output and ignores unrelated or malformed lines', () => {

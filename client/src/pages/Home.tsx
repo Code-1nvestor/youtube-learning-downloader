@@ -10,9 +10,16 @@
  */
 
 import { useState, useCallback } from 'react';
-import { api, ApiError, type ResolveResult, type CreateDownloadTaskInput } from '../api';
+import {
+  api,
+  ApiError,
+  type ResolveResult,
+  type CreateDownloadTaskInput,
+  type SubtitlePreview,
+} from '../api';
 import { useStore } from '../store';
-import { parseSubtitleLanguages } from '../utils/subtitles';
+import { buildActualFormatChoices, buildPresetFormatSelector } from '../utils/formats';
+import { buildSubtitleFileName, parseSubtitleLanguages } from '../utils/subtitles';
 
 export function Home() {
   const { resolveResult, resolving, error, setResolving, setResolveResult, setError, setView, notify } =
@@ -93,7 +100,7 @@ function ResolveResultView({
   onDownloaded: () => void;
 }) {
   if (result.kind === 'video' && result.videos.length === 1) {
-    return <SingleVideoDownload video={result.videos[0]} onDownloaded={onDownloaded} />;
+    return <SingleVideoDownload key={result.videos[0].id} video={result.videos[0]} onDownloaded={onDownloaded} />;
   }
   return <MultiVideoDownload title={result.title} videos={result.videos} onDownloaded={onDownloaded} />;
 }
@@ -108,23 +115,39 @@ function SingleVideoDownload({
 }) {
   const [container, setContainer] = useState('mp4');
   const [quality, setQuality] = useState('720p');
+  const actualFormatChoices = buildActualFormatChoices(video.formats);
+  const [formatMode, setFormatMode] = useState<'preset' | 'actual'>('preset');
+  const [actualFormatId, setActualFormatId] = useState(actualFormatChoices[0]?.formatId ?? '');
   const [subtitleMode, setSubtitleMode] = useState<'none' | 'embed' | 'separate'>('none');
   const [subtitleLangs, setSubtitleLangs] = useState('zh-Hans,en');
+  const [autoSubtitle, setAutoSubtitle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { notify } = useStore();
+  const selectedActualFormat = actualFormatChoices.find((choice) => choice.formatId === actualFormatId);
 
   const handleDownload = async () => {
+    if (formatMode === 'actual' && !selectedActualFormat) {
+      notify('当前视频没有可用的实际格式，请改用预设模式');
+      return;
+    }
     setSubmitting(true);
     try {
+      const outputContainer = formatMode === 'actual'
+        ? selectedActualFormat!.outputContainer
+        : container;
+      const formatId = formatMode === 'actual'
+        ? selectedActualFormat!.selector
+        : buildPresetFormatSelector(quality, container);
       const task: CreateDownloadTaskInput = {
         videoId: video.id,
         title: video.title,
         ...(video.playlistTitle ? { playlistTitle: video.playlistTitle } : {}),
         ...(video.playlistIndex ? { playlistIndex: video.playlistIndex } : {}),
-        container,
-        formatId: qualityToFormat(quality, container),
+        container: outputContainer,
+        formatId,
         subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
         subtitleMode,
+        autoSubtitle: subtitleMode !== 'none' && autoSubtitle,
       };
       await api.createDownload([task]);
       onDownloaded();
@@ -140,22 +163,73 @@ function SingleVideoDownload({
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
       <VideoCard video={video} />
 
-      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-800">
-        <Field label="视频格式">
-          <select value={container} onChange={(e) => setContainer(e.target.value)} className="select">
-            <option value="mp4">MP4</option>
-            <option value="webm">WebM</option>
-            <option value="mp3">MP3 (仅音频)</option>
-          </select>
-        </Field>
-        <Field label="画质预设">
-          <select value={quality} onChange={(e) => setQuality(e.target.value)} className="select">
-            <option value="highest">最高</option>
-            <option value="1080p">1080p</option>
-            <option value="720p">720p</option>
-            <option value="480p">480p</option>
-          </select>
-        </Field>
+      <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="格式选择方式">
+            <select
+              value={formatMode}
+              onChange={(e) => setFormatMode(e.target.value as 'preset' | 'actual')}
+              className="select"
+            >
+              <option value="preset">推荐预设</option>
+              <option value="actual" disabled={actualFormatChoices.length === 0}>
+                实际可用格式 ({actualFormatChoices.length})
+              </option>
+            </select>
+          </Field>
+          {formatMode === 'preset' ? (
+            <Field label="输出格式">
+              <select value={container} onChange={(e) => setContainer(e.target.value)} className="select">
+                <option value="mp4">MP4 视频</option>
+                <option value="webm">WebM 视频</option>
+                <option value="mp3">MP3 音频</option>
+                <option value="m4a">M4A 音频</option>
+              </select>
+            </Field>
+          ) : (
+            <Field label="自动输出容器">
+              <input
+                className="input bg-gray-50 dark:bg-gray-700"
+                value={selectedActualFormat?.outputContainer.toUpperCase() ?? '不可用'}
+                readOnly
+              />
+            </Field>
+          )}
+        </div>
+
+        {formatMode === 'preset' ? (
+          container === 'mp3' || container === 'm4a' ? (
+            <Field label="音质预设">
+              <input className="input bg-gray-50 dark:bg-gray-700" value="最佳可用音频" readOnly />
+            </Field>
+          ) : (
+            <Field label="画质预设">
+              <select value={quality} onChange={(e) => setQuality(e.target.value)} className="select">
+                <option value="highest">最高</option>
+                <option value="1080p">1080p</option>
+                <option value="720p">720p</option>
+                <option value="480p">480p</option>
+              </select>
+            </Field>
+          )
+        ) : (
+          <Field label="实际可用格式">
+            <select
+              value={actualFormatId}
+              onChange={(e) => setActualFormatId(e.target.value)}
+              className="select"
+            >
+              {actualFormatChoices.map((choice) => (
+                <option key={choice.formatId} value={choice.formatId}>{choice.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              “视频 + 自动配音频”表示所选画面轨道没有声音，下载时会自动合并最佳音频。
+            </p>
+          </Field>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
         <Field label="字幕模式">
           <select
             value={subtitleMode}
@@ -177,6 +251,18 @@ function SingleVideoDownload({
             className="input disabled:bg-gray-100 dark:disabled:bg-gray-700 dark:bg-gray-700"
           />
         </Field>
+        </div>
+        {subtitleMode !== 'none' && (
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={autoSubtitle}
+              onChange={(e) => setAutoSubtitle(e.target.checked)}
+              className="accent-primary-600"
+            />
+            没有人工字幕时，也尝试下载自动生成字幕
+          </label>
+        )}
       </div>
 
       <button
@@ -186,6 +272,133 @@ function SingleVideoDownload({
       >
         {submitting ? '提交中...' : '下载'}
       </button>
+
+      <SubtitleTools key={video.id} video={video} />
+    </div>
+  );
+}
+
+function SubtitleTools({ video }: { video: ResolveResult['videos'][number] }) {
+  const [selectedTrackIndex, setSelectedTrackIndex] = useState(0);
+  const [preview, setPreview] = useState<SubtitlePreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const { notify } = useStore();
+  const track = video.subtitles[selectedTrackIndex];
+  const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+
+  const handlePreview = async () => {
+    if (!track) return;
+    setPreviewing(true);
+    try {
+      setPreview(await api.previewSubtitle(
+        videoUrl,
+        track.language,
+        track.isAutoGenerated,
+        8,
+      ));
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '字幕预览失败');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleSubtitleDownload = async () => {
+    if (!track) return;
+    setDownloading(true);
+    try {
+      const result = await api.downloadSubtitle(
+        videoUrl,
+        track.language,
+        track.isAutoGenerated,
+      );
+      if (!result.content) throw new Error('后端没有返回字幕内容');
+      triggerTextDownload(
+        result.content,
+        buildSubtitleFileName(video.title, track.language),
+      );
+      notify(`字幕已生成，共 ${result.cueCount} 条`);
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '字幕下载失败');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-3">
+      <div>
+        <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">字幕工具</h3>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          可先预览字幕内容，也可只下载 SRT，不必下载视频。
+        </p>
+      </div>
+
+      {!track ? (
+        <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
+          当前视频没有可用字幕轨道。
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 items-end">
+            <Field label={`字幕轨道 (${video.subtitles.length})`}>
+              <select
+                value={selectedTrackIndex}
+                onChange={(event) => {
+                  setSelectedTrackIndex(Number(event.target.value));
+                  setPreview(null);
+                }}
+                className="select"
+              >
+                {video.subtitles.map((subtitle, index) => (
+                  <option
+                    key={`${subtitle.language}-${subtitle.isAutoGenerated ? 'auto' : 'manual'}`}
+                    value={index}
+                  >
+                    {subtitle.name} ({subtitle.language}) · {subtitle.isAutoGenerated ? '自动生成' : '人工字幕'}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={previewing || downloading}
+              className="px-4 py-2 border border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-300 rounded-lg text-sm hover:bg-primary-50 dark:hover:bg-primary-950/30 disabled:opacity-40"
+            >
+              {previewing ? '预览中...' : '预览'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSubtitleDownload}
+              disabled={previewing || downloading}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+            >
+              {downloading ? '生成中...' : '下载 SRT'}
+            </button>
+          </div>
+
+          {preview && (
+            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                {preview.languageName} · 共 {preview.totalCount} 条
+                {preview.truncated && ` · 当前显示前 ${preview.cues.length} 条`}
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-800 max-h-64 overflow-y-auto">
+                {preview.cues.map((cue) => (
+                  <div key={`${cue.index}-${cue.start}`} className="px-3 py-2 flex gap-3 text-sm">
+                    <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums flex-shrink-0 pt-0.5">
+                      {cue.startTimestamp}
+                    </span>
+                    <span className="text-gray-700 dark:text-gray-200 whitespace-pre-line">{cue.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -205,6 +418,7 @@ function MultiVideoDownload({
   const [quality, setQuality] = useState('720p');
   const [subtitleMode, setSubtitleMode] = useState<'none' | 'embed' | 'separate'>('none');
   const [subtitleLangs, setSubtitleLangs] = useState('zh-Hans,en');
+  const [autoSubtitle, setAutoSubtitle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { notify } = useStore();
 
@@ -232,9 +446,10 @@ function MultiVideoDownload({
           ...(v.playlistTitle ? { playlistTitle: v.playlistTitle } : {}),
           ...(v.playlistIndex ? { playlistIndex: v.playlistIndex } : {}),
           container,
-          formatId: qualityToFormat(quality, container),
+          formatId: buildPresetFormatSelector(quality, container),
           subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
           subtitleMode,
+          autoSubtitle: subtitleMode !== 'none' && autoSubtitle,
         };
       });
 
@@ -307,16 +522,23 @@ function MultiVideoDownload({
               <option value="mp4">MP4</option>
               <option value="webm">WebM</option>
               <option value="mp3">MP3</option>
+              <option value="m4a">M4A</option>
             </select>
           </Field>
-          <Field label="画质">
-            <select value={quality} onChange={(e) => setQuality(e.target.value)} className="select">
-              <option value="highest">最高</option>
-              <option value="1080p">1080p</option>
-              <option value="720p">720p</option>
-              <option value="480p">480p</option>
-            </select>
-          </Field>
+          {container === 'mp3' || container === 'm4a' ? (
+            <Field label="音质">
+              <input className="input bg-gray-50 dark:bg-gray-700" value="最佳可用音频" readOnly />
+            </Field>
+          ) : (
+            <Field label="画质">
+              <select value={quality} onChange={(e) => setQuality(e.target.value)} className="select">
+                <option value="highest">最高</option>
+                <option value="1080p">1080p</option>
+                <option value="720p">720p</option>
+                <option value="480p">480p</option>
+              </select>
+            </Field>
+          )}
           <Field label="字幕">
             <select
               value={subtitleMode}
@@ -339,6 +561,17 @@ function MultiVideoDownload({
             />
           </Field>
         </div>
+        {subtitleMode !== 'none' && (
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={autoSubtitle}
+              onChange={(event) => setAutoSubtitle(event.target.checked)}
+              className="accent-primary-600"
+            />
+            没有人工字幕时，也尝试下载自动生成字幕
+          </label>
+        )}
         <button
           onClick={handleBatchDownload}
           disabled={submitting || selected.size === 0}
@@ -398,11 +631,13 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** 画质预设 → yt-dlp 格式选择器 */
-function qualityToFormat(quality: string, container: string): string {
-  if (container === 'mp3') return 'bestaudio/best';
-  const heightMap: Record<string, number> = { '1080p': 1080, '720p': 720, '480p': 480 };
-  const h = heightMap[quality];
-  if (h) return `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`;
-  return `bestvideo+bestaudio/best`;
+function triggerTextDownload(content: string, fileName: string): void {
+  const objectUrl = URL.createObjectURL(new Blob([`\uFEFF${content}`], {
+    type: 'application/x-subrip;charset=utf-8',
+  }));
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }

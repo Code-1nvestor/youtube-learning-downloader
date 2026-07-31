@@ -12,3 +12,17 @@ export function parseSubtitleLanguages(mode: SubtitleMode, input: string): strin
     ),
   );
 }
+
+export function buildSubtitleFileName(title: string, language: string): string {
+  const safeTitle = sanitizeFilePart(title) || 'subtitle';
+  const safeLanguage = sanitizeFilePart(language) || 'unknown';
+  return `${safeTitle}.${safeLanguage}.srt`;
+}
+
+function sanitizeFilePart(value: string): string {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .trim()
+    .slice(0, 120);
+}

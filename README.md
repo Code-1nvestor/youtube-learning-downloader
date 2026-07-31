@@ -11,7 +11,9 @@ Express + yt-dlp，下载记录保存在 SQLite；当前正在补齐 Windows Ele
 - 视频、播放列表、频道和搜索解析
 - 单个或批量加入下载队列
 - 下载进度、暂停、恢复、取消和失败重试
-- 画质、容器、字幕和命名模板
+- 推荐画质预设与单视频实际格式轨道选择
+- MP4/WebM 合并、MP3/M4A 音频提取
+- 字幕轨道选择、预览、单独下载与随视频处理
 - Cookie 文件或浏览器 Cookie 导入
 - 字幕预览与单独下载
 - SQLite 队列恢复和下载历史
@@ -82,6 +84,17 @@ Remove-Item Env:YLD_E2E_LIVE
 记录与重启恢复检查。成功标志是输出 `"ok": true`；如果返回 `RATE_LIMITED`，说明
 当前网络被 YouTube 要求人机验证，应先在桌面版“设置 → Cookie 配置”中完成配置。
 测试脚本不会自动读取浏览器 Cookie。
+
+在 YouTube 不可访问时，可用完全离线的 UI 验收数据检查格式和字幕界面：
+
+```powershell
+npm run build
+$env:YLD_UI_FIXTURE = '1'
+npm run ui:fixture
+```
+
+成功标志：终端显示 `UI fixture ready`，打开对应本地地址后，输入任意内容并点击
+“解析”，即可看到带实际格式和字幕轨道的测试视频。该模式不会进入桌面安装包。
 
 ## 目录说明
 

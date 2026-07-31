@@ -1,6 +1,6 @@
 {
   "name": "youtube-learning-downloader",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "main": "desktop/main.cjs",
   "description": "YouTube 学习资料下载工具（个人学习用途，非商业）",
@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-sqlite node_modules/tsx/dist/cli.mjs --test tests/**/*.test.ts",
     "test:e2e": "node scripts/e2e-smoke.mjs",
+    "ui:fixture": "node scripts/ui-fixture-server.mjs",
     "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
