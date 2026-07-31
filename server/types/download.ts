@@ -10,6 +10,8 @@
 // ————————————————————————————————————————————
 
 /** 任务状态机：queued → downloading → completed / retrying / failed / cancelled */
+import type { ErrorCode } from './errors.ts';
+
 export type DownloadStatus =
   | 'queued'        // 已入队，等待分配执行槽位
   | 'downloading'   // 正在下载
@@ -66,6 +68,8 @@ export interface DownloadTask {
   nextRetryAt?: string;
   /** 错误信息（status=failed 时填充） */
   error?: string;
+  /** 稳定错误码，供界面显示可执行的恢复建议 */
+  errorCode?: ErrorCode;
   /** 创建时间 ISO 8601 */
   createdAt: string;
   /** 完成时间 ISO 8601 */

@@ -34,6 +34,7 @@ export interface TaskRow {
   max_retries: number;
   next_retry_at: string | null;
   error: string | null;
+  error_code: string | null;
   created_at: string;
   completed_at: string | null;
   updated_at: string;
@@ -64,6 +65,7 @@ export function taskToRow(task: DownloadTask): Record<string, SqlValue> {
     $max_retries: task.maxRetries,
     $next_retry_at: task.nextRetryAt ?? null,
     $error: task.error ?? null,
+    $error_code: task.errorCode ?? null,
     $created_at: task.createdAt,
     $completed_at: task.completedAt ?? null,
     $updated_at: new Date().toISOString(),
@@ -95,6 +97,7 @@ export function rowToTask(row: TaskRow): DownloadTask {
     maxRetries: row.max_retries,
     ...(row.next_retry_at ? { nextRetryAt: row.next_retry_at } : {}),
     ...(row.error ? { error: row.error } : {}),
+    ...(row.error_code ? { errorCode: row.error_code as DownloadTask['errorCode'] } : {}),
     createdAt: row.created_at,
     ...(row.completed_at ? { completedAt: row.completed_at } : {}),
   };

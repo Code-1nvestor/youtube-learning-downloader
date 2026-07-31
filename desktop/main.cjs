@@ -224,6 +224,13 @@ function registerIpcHandlers() {
     const error = await shell.openPath(logsDir);
     return error ? { path: logsDir, error } : { path: logsDir };
   });
+
+  ipcMain.handle('desktop:restart-app', () => {
+    shuttingDown = true;
+    app.relaunch();
+    app.quit();
+    return true;
+  });
 }
 
 async function startDesktopApp() {

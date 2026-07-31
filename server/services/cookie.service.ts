@@ -33,8 +33,14 @@ export class CookieService {
   private browser?: 'chrome' | 'edge' | 'firefox' | 'brave' | 'safari';
   private cookieFilePath?: string;
   private updatedAt?: string;
+  private readonly cookieDir: string;
+  private readonly configFilePath: string;
 
-  constructor(private readonly projectRoot: string) {}
+  constructor(private readonly projectRoot: string) {
+    this.cookieDir = path.resolve(this.projectRoot, CookieService.COOKIE_DIR);
+    this.configFilePath = path.resolve(this.cookieDir, 'config.json');
+    this.restore();
+  }
 
   // ------------------------------------------
   // 状态查询
@@ -80,16 +86,16 @@ export class CookieService {
   setFromFile(content: string): void {
     this.validateNetscapeFormat(content);
 
-    const dir = path.resolve(this.projectRoot, CookieService.COOKIE_DIR);
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(this.cookieDir, { recursive: true });
 
-    const filePath = path.resolve(dir, CookieService.COOKIE_FILE);
+    const filePath = path.resolve(this.cookieDir, CookieService.COOKIE_FILE);
     fs.writeFileSync(filePath, content, 'utf8');
 
     this.source = 'file';
     this.browser = undefined;
     this.cookieFilePath = filePath;
     this.updatedAt = new Date().toISOString();
+    this.persistMetadata();
   }
 
   /**
@@ -111,6 +117,7 @@ export class CookieService {
     this.browser = browser;
     this.cookieFilePath = undefined;
     this.updatedAt = new Date().toISOString();
+    this.persistMetadata();
   }
 
   /** 清除 Cookie 配置（同时删除文件） */
@@ -126,11 +133,54 @@ export class CookieService {
     this.browser = undefined;
     this.cookieFilePath = undefined;
     this.updatedAt = undefined;
+    try {
+      fs.unlinkSync(this.configFilePath);
+    } catch {
+      // 配置文件已不存在，忽略。
+    }
   }
 
   // ------------------------------------------
   // 内部
   // ------------------------------------------
+
+  private persistMetadata(): void {
+    fs.mkdirSync(this.cookieDir, { recursive: true });
+    fs.writeFileSync(
+      this.configFilePath,
+      JSON.stringify({
+        source: this.source,
+        ...(this.browser ? { browser: this.browser } : {}),
+        updatedAt: this.updatedAt,
+      }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+  }
+
+  private restore(): void {
+    if (!fs.existsSync(this.configFilePath)) return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.configFilePath, 'utf8')) as {
+        source?: CookieSourceType;
+        browser?: 'chrome' | 'edge' | 'firefox' | 'brave' | 'safari';
+        updatedAt?: string;
+      };
+      if (saved.source === 'file') {
+        const filePath = path.resolve(this.cookieDir, CookieService.COOKIE_FILE);
+        const content = fs.readFileSync(filePath, 'utf8');
+        this.validateNetscapeFormat(content);
+        this.source = 'file';
+        this.cookieFilePath = filePath;
+      } else if (saved.source === 'browser' && saved.browser) {
+        if (saved.browser === 'safari' && !process.platform.startsWith('darwin')) return;
+        this.source = 'browser';
+        this.browser = saved.browser;
+      }
+      this.updatedAt = saved.updatedAt;
+    } catch (error) {
+      console.warn('[cookie] 已保存的 Cookie 配置不可用，将忽略:', error);
+    }
+  }
 
   /**
    * 验证 Netscape cookie 文件格式。

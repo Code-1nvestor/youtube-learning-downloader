@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     selectDirectory: () => ipcRenderer.invoke('desktop:select-directory'),
     openLogsDirectory: () => ipcRenderer.invoke('desktop:open-logs-directory'),
+    restartApp: () => ipcRenderer.invoke('desktop:restart-app'),
   }),
 );

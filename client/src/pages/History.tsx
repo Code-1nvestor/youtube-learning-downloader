@@ -14,6 +14,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError, type DownloadTask, type HistoryPage } from '../api';
 import { useStore } from '../store';
+import { getErrorGuidance } from '../utils/error-actions';
 
 const PAGE_SIZE = 20;
 
@@ -146,6 +147,7 @@ function HistoryItem({
   task: DownloadTask;
   onDelete: (task: DownloadTask) => void;
 }) {
+  const openSettings = useStore((state) => state.openSettings);
   const statusColor: Record<string, string> = {
     completed: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/40',
     failed: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 dark:bg-red-950/40',
@@ -191,9 +193,14 @@ function HistoryItem({
         </div>
         {/* 错误信息 */}
         {task.status === 'failed' && task.error && (
-          <p className="text-xs text-red-500 dark:text-red-400 mt-1 truncate" title={task.error}>
-            {task.error}
-          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <p className="text-xs text-red-500 dark:text-red-400 truncate" title={task.error}>{task.error}</p>
+            {task.errorCode && getErrorGuidance(task.errorCode).settingsLabel && (
+              <button type="button" onClick={() => openSettings(getErrorGuidance(task.errorCode!).settingsTarget)} className="shrink-0 text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                {getErrorGuidance(task.errorCode).settingsLabel}
+              </button>
+            )}
+          </div>
         )}
         {/* 输出路径（仅完成时显示） */}
         {task.status === 'completed' && (

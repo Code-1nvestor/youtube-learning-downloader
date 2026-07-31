@@ -21,6 +21,7 @@ import { QueueService } from './services/queue.service.ts';
 import { SubtitleService } from './services/subtitle.service.ts';
 import { HistoryService } from './services/history.service.ts';
 import { SettingsService } from './services/settings.service.ts';
+import { ToolUpdateService } from './services/tool-update.service.ts';
 import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 import { runProcess, BinaryNotFoundError } from './core/process.ts';
@@ -141,6 +142,13 @@ async function main(): Promise<void> {
 
   // 历史服务（Phase 5）
   const historyService = new HistoryService(dbForQueue);
+  const toolUpdateService = new ToolUpdateService({
+    binary: config.ytDlpBinary,
+    currentVersion: ytDlpStatus.version,
+    appDataPath: config.appDataPath,
+    resourcePath: config.resourcePath,
+    enabled: process.env.ELECTRON_RUN_AS_NODE === '1',
+  });
 
   const app = createApp(
     config,
@@ -150,6 +158,7 @@ async function main(): Promise<void> {
     subtitleService,
     historyService,
     settingsService,
+    toolUpdateService,
     { ytDlp: ytDlpStatus, ffmpeg: ffmpegStatus },
   );
 

@@ -125,6 +125,7 @@ export interface DownloadTask {
   maxRetries: number;
   nextRetryAt?: string;
   error?: string;
+  errorCode?: string;
   createdAt: string;
   completedAt?: string;
 }
@@ -166,6 +167,16 @@ export interface HealthStatus {
     ytDlp: RuntimeToolStatus;
     ffmpeg: RuntimeToolStatus;
   };
+}
+
+export interface YtDlpUpdateStatus {
+  currentVersion?: string;
+  installedVersion?: string;
+  source: 'updated' | 'bundled' | 'custom' | 'path';
+  updateSupported: boolean;
+  channel: 'nightly';
+  restartRequired: boolean;
+  message?: string;
 }
 
 export interface AppSettingsStatus {
@@ -239,8 +250,12 @@ async function sleep(ms: number): Promise<void> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let lastError: ApiError | null = null;
+  // Only retry idempotent reads. Retrying POST/DELETE after a lost response can
+  // duplicate downloads, updates, or destructive actions.
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const retryLimit = method === 'GET' || method === 'HEAD' ? MAX_RETRIES : 0;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= retryLimit; attempt++) {
     try {
       // 检查网络连接
       if (!navigator.onLine && attempt === 0) {
@@ -278,7 +293,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         : err instanceof ApiError ? err : new ApiError('UNKNOWN', String(err));
 
       // 最后一次尝试不再等待
-      if (attempt < MAX_RETRIES && lastError.isRetryable()) {
+      if (attempt < retryLimit && lastError.isRetryable()) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
         continue;
       }
@@ -294,6 +309,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getHealth: () => request<HealthStatus>('/health'),
+  getYtDlpUpdateStatus: () => request<YtDlpUpdateStatus>('/runtime/yt-dlp'),
+  updateYtDlp: () => request<YtDlpUpdateStatus>('/runtime/yt-dlp/update', { method: 'POST' }),
   getSettings: () => request<AppSettingsStatus>('/settings'),
   updateSettings: (settings: UpdateAppSettingsInput) =>
     request<AppSettingsStatus>('/settings', {

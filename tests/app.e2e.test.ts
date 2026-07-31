@@ -16,6 +16,7 @@ import { NamingService } from '../server/services/naming.service.ts';
 import { QueueService } from '../server/services/queue.service.ts';
 import { SettingsService } from '../server/services/settings.service.ts';
 import { SubtitleService } from '../server/services/subtitle.service.ts';
+import { ToolUpdateService } from '../server/services/tool-update.service.ts';
 import type { DownloadTask, ProgressInfo } from '../server/types/download.ts';
 import type { ResolveResult } from '../server/types/video.ts';
 
@@ -80,6 +81,12 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     outputRoot: downloadPath,
   });
   const history = new HistoryService(db);
+  const toolUpdate = new ToolUpdateService({
+    binary: 'fake-yt-dlp',
+    currentVersion: 'fake',
+    appDataPath: tempDir,
+    resourcePath: tempDir,
+  });
   const config: AppConfig = {
     port: 0,
     ytDlpBinary: 'fake-yt-dlp',
@@ -103,6 +110,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     subtitle,
     history,
     settings,
+    toolUpdate,
     {
       ytDlp: { available: true, version: 'fake' },
       ffmpeg: { available: true, version: 'fake' },
@@ -168,6 +176,22 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
       '/api/resolve?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DYE7VzlLtp-4',
     );
     assert.equal(resolved.videos[0]?.id, 'YE7VzlLtp-4');
+
+    const updateStatus = await apiRequest<{ updateSupported: boolean; channel: string }>(
+      harness.baseUrl,
+      '/api/runtime/yt-dlp',
+    );
+    assert.equal(updateStatus.updateSupported, false);
+    assert.equal(updateStatus.channel, 'nightly');
+
+    const blocked = await fetch(`${harness.baseUrl}/api/runtime/yt-dlp/update`, {
+      method: 'POST',
+      headers: { origin: 'https://malicious.example' },
+    });
+    assert.equal(blocked.status, 403);
+    const blockedPayload = await blocked.json() as { success: boolean; error?: { code: string } };
+    assert.equal(blockedPayload.success, false);
+    assert.equal(blockedPayload.error?.code, 'PATH_NOT_ALLOWED');
 
     const created = await apiRequest<{ taskIds: string[] }>(harness.baseUrl, '/api/download', {
       method: 'POST',

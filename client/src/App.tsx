@@ -6,7 +6,7 @@
  * 全局错误通知样式、网络状态监听与离线提示。
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './store';
 import { Home } from './pages/Home';
 import { Queue } from './pages/Queue';
@@ -14,6 +14,7 @@ import { History } from './pages/History';
 import { Settings } from './pages/Settings';
 import { ThemeToggle } from './components/ThemeToggle';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { FirstRunWizard } from './components/FirstRunWizard';
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -23,6 +24,9 @@ export default function App() {
   const online = useStore((s) => s.online);
   const setOnline = useStore((s) => s.setOnline);
   const notify = useStore((s) => s.notify);
+  const [wizardOpen, setWizardOpen] = useState(
+    () => typeof localStorage !== 'undefined' && localStorage.getItem('yld:first-run-complete:v1') !== '1',
+  );
 
   // 监听网络状态变化
   useEffect(() => {
@@ -63,6 +67,9 @@ export default function App() {
           <NavButton active={view === 'settings'} onClick={() => setView('settings')}>
             设置
           </NavButton>
+          <NavButton active={false} onClick={() => setWizardOpen(true)}>
+            使用准备
+          </NavButton>
         </div>
         {/* 网络状态指示器 */}
         <span
@@ -89,7 +96,7 @@ export default function App() {
       {/* 全局通知（错误） */}
       {error && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm max-w-md">
-          {error}
+          {error.message}
         </div>
       )}
 
@@ -103,6 +110,14 @@ export default function App() {
 
       {/* PWA 安装提示 */}
       <PWAInstallPrompt />
+      <FirstRunWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onGoSettings={() => {
+          setWizardOpen(false);
+          setView('settings');
+        }}
+      />
     </div>
   );
 }

@@ -38,7 +38,7 @@ export function translateYtDlpError(stderr: string, context: string): AppError {
   }
   // YouTube 机器人验证：需要浏览器 Cookie 证明非机器人
   if (text.includes('sign in to confirm') || text.includes('not a bot')) {
-    return new AppError('RATE_LIMITED', 'YouTube 要求进行人机验证。请通过 /api/auth/cookie 配置浏览器 Cookie 后重试', {
+    return new AppError('RATE_LIMITED', 'YouTube 要求进行人机验证，请在设置页面配置浏览器 Cookie 后重试', {
       stderr: tail(stderr),
     });
   }

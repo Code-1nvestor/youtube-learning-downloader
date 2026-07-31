@@ -20,7 +20,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 /** 当前 Schema 版本 */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** 预编译语句句柄（init 后填充） */
 export interface PreparedStatements {
@@ -77,7 +77,7 @@ export function initDatabase(dbPath: string): DbContext {
         subtitle_langs, subtitle_mode, auto_subtitle,
         status, progress, speed, eta,
         downloaded_bytes, total_bytes, estimated_bytes,
-        retry_count, max_retries, next_retry_at, error,
+        retry_count, max_retries, next_retry_at, error, error_code,
         created_at, completed_at, updated_at
       ) VALUES (
         $id, $video_id, $title, $playlist_title, $playlist_index,
@@ -85,7 +85,7 @@ export function initDatabase(dbPath: string): DbContext {
         $subtitle_langs, $subtitle_mode, $auto_subtitle,
         $status, $progress, $speed, $eta,
         $downloaded_bytes, $total_bytes, $estimated_bytes,
-        $retry_count, $max_retries, $next_retry_at, $error,
+        $retry_count, $max_retries, $next_retry_at, $error, $error_code,
         $created_at, $completed_at, $updated_at
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -100,6 +100,7 @@ export function initDatabase(dbPath: string): DbContext {
         max_retries = $max_retries,
         next_retry_at = $next_retry_at,
         error = $error,
+        error_code = $error_code,
         completed_at = $completed_at,
         updated_at = $updated_at
     `),
@@ -210,6 +211,10 @@ function migrate(db: DatabaseSync): void {
     addColumnIfMissing(db, 'download_tasks', 'retry_count', 'INTEGER NOT NULL DEFAULT 0');
     addColumnIfMissing(db, 'download_tasks', 'max_retries', 'INTEGER NOT NULL DEFAULT 2');
     addColumnIfMissing(db, 'download_tasks', 'next_retry_at', 'TEXT');
+  }
+
+  if (version < 3) {
+    addColumnIfMissing(db, 'download_tasks', 'error_code', 'TEXT');
   }
 
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

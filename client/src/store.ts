@@ -14,19 +14,28 @@ import { create } from 'zustand';
 import type { ResolveResult, DownloadTask, CookieStatus } from './api';
 
 type View = 'home' | 'queue' | 'history' | 'settings';
+export type SettingsTarget = 'download' | 'runtime' | 'update' | 'diagnostics' | 'cookie';
+
+export interface UserFacingError {
+  code: string;
+  message: string;
+}
 
 interface AppState {
   // -- 视图 --
   view: View;
   setView: (v: View) => void;
+  settingsTarget: SettingsTarget | null;
+  openSettings: (target?: SettingsTarget) => void;
+  clearSettingsTarget: () => void;
 
   // -- 解析 --
   resolveResult: ResolveResult | null;
   resolving: boolean;
-  error: string | null;
+  error: UserFacingError | null;
   setResolving: (b: boolean) => void;
   setResolveResult: (r: ResolveResult | null) => void;
-  setError: (e: string | null) => void;
+  setError: (e: UserFacingError | null) => void;
 
   // -- 队列 --
   tasks: DownloadTask[];
@@ -52,6 +61,9 @@ export const useStore = create<AppState>((set) => ({
   // 视图
   view: 'home',
   setView: (v) => set({ view: v }),
+  settingsTarget: null,
+  openSettings: (target) => set({ view: 'settings', settingsTarget: target ?? null }),
+  clearSettingsTarget: () => set({ settingsTarget: null }),
 
   // 解析
   resolveResult: null,

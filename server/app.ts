@@ -25,6 +25,7 @@ import type { CookieService } from './services/cookie.service.ts';
 import type { SubtitleService } from './services/subtitle.service.ts';
 import type { HistoryService } from './services/history.service.ts';
 import type { SettingsService } from './services/settings.service.ts';
+import type { ToolUpdateService } from './services/tool-update.service.ts';
 import type { RuntimeStatus } from './types/runtime.ts';
 import { createResolveRouter } from './routes/resolve.ts';
 import { createDownloadRouter } from './routes/download.ts';
@@ -33,6 +34,7 @@ import { createAuthRouter } from './routes/auth.ts';
 import { createSubtitleRouter } from './routes/subtitle.ts';
 import { createHistoryRouter } from './routes/history.ts';
 import { createSettingsRouter } from './routes/settings.ts';
+import { createRuntimeRouter } from './routes/runtime.ts';
 import { AppError, isAppError } from './types/errors.ts';
 import { ok, fail } from './types/result.ts';
 
@@ -44,12 +46,14 @@ export function createApp(
   subtitleService: SubtitleService,
   historyService: HistoryService,
   settingsService: SettingsService,
+  toolUpdateService: ToolUpdateService,
   runtimeStatus: RuntimeStatus,
 ): Express {
   const app = express();
 
   // 上调到 2mb：Cookie 文件可能较大
   app.use(express.json({ limit: '2mb' }));
+  app.use(rejectRemoteBrowserOrigins);
 
   // -- 健康检查（前端联调与部署探活使用）--
   app.get('/api/health', (_req, res) => {
@@ -64,6 +68,7 @@ export function createApp(
   app.use('/api/subtitle', createSubtitleRouter(subtitleService));
   app.use('/api/history', createHistoryRouter(historyService));
   app.use('/api/settings', createSettingsRouter(settingsService, queueService, subtitleService));
+  app.use('/api/runtime', createRuntimeRouter(toolUpdateService, queueService));
 
   // In production the backend serves the Vite build, so the desktop app needs one local service.
   if (!config.isDev && fs.existsSync(config.webDistPath)) {
@@ -84,6 +89,35 @@ export function createApp(
   app.use(errorHandler(config.isDev));
 
   return app;
+}
+
+/**
+ * Block cross-site browser POSTs to the localhost API. Requests without Origin
+ * (health probes/CLI) remain supported; browser origins must themselves be local.
+ */
+function rejectRemoteBrowserOrigins(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): void {
+  const origin = req.get('origin');
+  if (!origin) {
+    next();
+    return;
+  }
+  try {
+    const url = new URL(origin);
+    if (
+      url.protocol === 'http:' &&
+      (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]')
+    ) {
+      next();
+      return;
+    }
+  } catch {
+    // Fall through to a structured rejection.
+  }
+  next(new AppError('PATH_NOT_ALLOWED', '拒绝来自非本机页面的请求', { origin }, 403));
 }
 
 function notFoundHandler(_req: Request, res: Response): void {

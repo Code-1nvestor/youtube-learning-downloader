@@ -14,12 +14,13 @@ import {
   type AppSettingsStatus,
   type CookieStatus,
   type HealthStatus,
+  type YtDlpUpdateStatus,
 } from '../api';
 import { useStore } from '../store';
 import { useTheme, type ThemeMode } from '../hooks/useTheme';
 
 export function Settings() {
-  const { cookieStatus, setCookieStatus, notify } = useStore();
+  const { cookieStatus, setCookieStatus, notify, settingsTarget, clearSettingsTarget } = useStore();
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
 
@@ -28,6 +29,18 @@ export function Settings() {
     api.getCookieStatus().then(setCookieStatus).catch(() => {});
     api.getHealth().then(setHealth).catch(() => {});
   }, [setCookieStatus]);
+
+  useEffect(() => {
+    if (!settingsTarget) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`settings-${settingsTarget}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+      clearSettingsTarget();
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [settingsTarget, clearSettingsTarget]);
 
   const refreshStatus = async () => {
     try {
@@ -75,10 +88,12 @@ export function Settings() {
 
       <RuntimeSection health={health} />
 
+      <YtDlpUpdateSection />
+
       <DiagnosticsSection />
 
       {/* Cookie 配置 */}
-      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <section id="settings-cookie" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
         <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">Cookie 配置</h2>
         <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
           配置浏览器 Cookie 后可绕过 YouTube 机器人验证，访问私有/受限内容
@@ -205,7 +220,7 @@ function DownloadSettingsSection() {
   };
 
   return (
-    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+    <section id="settings-download" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">下载设置</h2>
@@ -327,7 +342,7 @@ function DiagnosticsSection() {
   };
 
   return (
-    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+    <section id="settings-diagnostics" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">诊断与日志</h2>
       <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
         下载失败时可打开应用日志目录，把 backend.log 提供给开发者定位问题。
@@ -344,6 +359,120 @@ function DiagnosticsSection() {
   );
 }
 
+function YtDlpUpdateSection() {
+  const { notify } = useStore();
+  const [status, setStatus] = useState<YtDlpUpdateStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getYtDlpUpdateStatus()
+      .then((value) => {
+        if (!cancelled) setStatus(value);
+      })
+      .catch((error) => {
+        if (!cancelled) notify(error instanceof ApiError ? error.message : '读取 yt-dlp 更新状态失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notify]);
+
+  const update = async () => {
+    setUpdating(true);
+    try {
+      const value = await api.updateYtDlp();
+      setStatus(value);
+      setConfirming(false);
+      notify(value.restartRequired
+        ? `yt-dlp ${value.installedVersion ?? ''} 已安装，重启应用后生效`
+        : `yt-dlp 已更新到 ${value.currentVersion ?? value.installedVersion ?? '最新版本'}`);
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'yt-dlp 更新失败');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const restart = async () => {
+    if (!window.desktop) {
+      notify('请关闭并重新打开桌面应用');
+      return;
+    }
+    await window.desktop.restartApp();
+  };
+
+  const sourceLabel = status?.source === 'updated'
+    ? '用户更新版'
+    : status?.source === 'bundled'
+      ? '应用内置版'
+      : status?.source === 'custom'
+        ? '自定义文件'
+        : '系统 PATH';
+
+  return (
+    <section id="settings-update" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">yt-dlp 更新</h2>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            YouTube 规则变化时，更新下载核心通常能恢复解析和下载。
+          </p>
+        </div>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+          {loading ? '读取中' : sourceLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+        <p>当前运行：{status?.currentVersion ?? '未知'}</p>
+        {status?.installedVersion && status.installedVersion !== status.currentVersion && (
+          <p className="mt-1 text-green-600 dark:text-green-400">已安装：{status.installedVersion}</p>
+        )}
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          更新通道：官方 Nightly（yt-dlp 推荐普通用户使用）
+        </p>
+        {status?.message && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{status.message}</p>}
+      </div>
+
+      {confirming && (
+        <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300">
+          <p>将连接 yt-dlp 官方发布源，把更新文件写入本机应用数据目录。不会修改安装目录。</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={() => setConfirming(false)} className="px-3 py-1.5 text-xs">取消</button>
+            <button type="button" onClick={() => void update()} disabled={updating} className="px-3 py-1.5 text-xs rounded-md bg-amber-600 text-white disabled:opacity-40">
+              {updating ? '正在更新…' : '确认更新'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex justify-end gap-2">
+        {status?.restartRequired && (
+          <button type="button" onClick={() => void restart()} className="px-4 py-2 text-sm border border-green-300 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-50 dark:hover:bg-green-950/40">
+            {window.desktop ? '立即重启并启用' : '请重启桌面应用'}
+          </button>
+        )}
+        {!status?.restartRequired && (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={loading || !status?.updateSupported || updating || confirming}
+            className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-40"
+          >
+            更新到官方 Nightly
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function RuntimeSection({ health }: { health: HealthStatus | null }) {
   const tools = [
     { name: 'yt-dlp', status: health?.runtime.ytDlp },
@@ -351,7 +480,7 @@ function RuntimeSection({ health }: { health: HealthStatus | null }) {
   ];
 
   return (
-    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+    <section id="settings-runtime" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">运行环境</h2>
       <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
         下载器启动时会自动检查必要工具。

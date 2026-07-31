@@ -20,9 +20,10 @@ import {
 import { useStore } from '../store';
 import { buildActualFormatChoices, buildPresetFormatSelector } from '../utils/formats';
 import { buildSubtitleFileName, parseSubtitleLanguages } from '../utils/subtitles';
+import { getErrorGuidance } from '../utils/error-actions';
 
 export function Home() {
-  const { resolveResult, resolving, error, setResolving, setResolveResult, setError, setView, notify } =
+  const { resolveResult, resolving, error, setResolving, setResolveResult, setError, setView, openSettings, notify } =
     useStore();
   const [url, setUrl] = useState('');
 
@@ -36,8 +37,9 @@ export function Home() {
       const result = await api.resolve(trimmed);
       setResolveResult(result);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : '解析失败，请检查网络或 URL';
-      setError(msg);
+      setError(e instanceof ApiError
+        ? { code: e.code, message: e.message }
+        : { code: 'UNKNOWN', message: '解析失败，请检查网络或 URL' });
       setResolveResult(null);
     }
   }, [url, setResolving, setError, setResolveResult]);
@@ -78,9 +80,11 @@ export function Home() {
 
       {/* 错误提示 */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-950/40 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-red-700 dark:text-red-400">
-          {error}
-        </div>
+        <ActionableError
+          code={error.code}
+          message={error.message}
+          onOpenSettings={(target) => openSettings(target)}
+        />
       )}
 
       {/* 解析结果 */}
@@ -88,6 +92,34 @@ export function Home() {
         notify('已加入下载队列');
         setView('queue');
       }} />}
+    </div>
+  );
+}
+
+function ActionableError({
+  code,
+  message,
+  onOpenSettings,
+}: {
+  code: string;
+  message: string;
+  onOpenSettings: (target: NonNullable<ReturnType<typeof getErrorGuidance>['settingsTarget']>) => void;
+}) {
+  const action = getErrorGuidance(code);
+
+  return (
+    <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-red-700 dark:text-red-400">
+      <p className="font-medium">{message}</p>
+      <p className="mt-1 text-xs">{action.guidance}</p>
+      {action.settingsLabel && (
+        <button
+          type="button"
+          onClick={() => action.settingsTarget && onOpenSettings(action.settingsTarget)}
+          className="mt-3 px-3 py-1.5 rounded-md bg-white dark:bg-gray-900 border border-red-200 dark:border-red-800 text-xs hover:bg-red-100 dark:hover:bg-red-950"
+        >
+          {action.settingsLabel}
+        </button>
+      )}
     </div>
   );
 }

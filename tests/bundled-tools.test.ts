@@ -28,3 +28,21 @@ test('falls back to the configured command when no packaged tool exists', () => 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('prefers a user-updated tool over the packaged copy', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-tools-'));
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-app-data-'));
+  const executableName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  const bundled = path.join(root, 'bin', executableName);
+  const updated = path.join(appData, 'tools', executableName);
+  try {
+    fs.mkdirSync(path.dirname(bundled), { recursive: true });
+    fs.mkdirSync(path.dirname(updated), { recursive: true });
+    fs.writeFileSync(bundled, 'bundled');
+    fs.writeFileSync(updated, 'updated');
+    assert.equal(resolveToolBinary('yt-dlp', 'yt-dlp', root, appData), updated);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(appData, { recursive: true, force: true });
+  }
+});

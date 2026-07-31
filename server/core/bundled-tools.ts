@@ -6,6 +6,7 @@ export function resolveToolBinary(
   toolName: 'yt-dlp' | 'ffmpeg',
   configured: string | undefined,
   baseDir = process.cwd(),
+  appDataDir?: string,
 ): string {
   if (configured && path.isAbsolute(configured) && fs.existsSync(configured)) {
     return configured;
@@ -13,6 +14,7 @@ export function resolveToolBinary(
 
   const executableName = process.platform === 'win32' ? `${toolName}.exe` : toolName;
   const candidates = [
+    ...(appDataDir ? [path.resolve(appDataDir, 'tools', executableName)] : []),
     path.resolve(baseDir, 'bin', executableName),
     path.resolve(baseDir, 'resources', 'bin', executableName),
   ];

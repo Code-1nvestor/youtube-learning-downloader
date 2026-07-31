@@ -165,6 +165,7 @@ test('does not automatically retry non-transient failures', async () => {
     await waitUntil(() => queue.getTask(taskId!)?.status === 'failed');
     assert.equal(unavailable.attempts, 1);
     assert.equal(queue.getTask(taskId!)?.retryCount, 0);
+    assert.equal(queue.getTask(taskId!)?.errorCode, 'VIDEO_UNAVAILABLE');
   } finally {
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }

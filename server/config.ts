@@ -83,6 +83,7 @@ export function loadConfig(): AppConfig {
       'yt-dlp',
       process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary,
       resourcePath,
+      appDataPath,
     ),
     ffmpegBinary: resolveToolBinary(
       'ffmpeg',

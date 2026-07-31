@@ -89,6 +89,37 @@ app.get('/api/health', (_request, response) => {
   });
 });
 
+app.get('/api/auth/cookie', (_request, response) => {
+  response.json({ success: true, data: { configured: false, source: 'none' } });
+});
+
+app.get('/api/runtime/yt-dlp', (_request, response) => {
+  response.json({
+    success: true,
+    data: {
+      currentVersion: '2026.07.04',
+      source: 'bundled',
+      updateSupported: true,
+      channel: 'nightly',
+      restartRequired: false,
+    },
+  });
+});
+
+app.post('/api/runtime/yt-dlp/update', (_request, response) => {
+  response.json({
+    success: true,
+    data: {
+      currentVersion: '2026.07.04',
+      installedVersion: '2026.08.01',
+      source: 'bundled',
+      updateSupported: true,
+      channel: 'nightly',
+      restartRequired: true,
+    },
+  });
+});
+
 app.get('/api/resolve', (_request, response) => {
   response.json({
     success: true,
@@ -165,11 +196,33 @@ app.get('/api/queue', (_request, response) => {
         nextRetryAt: new Date(Date.now() + 30_000).toISOString(),
         error: '网络连接暂时中断',
         createdAt: new Date().toISOString(),
+      }, {
+        id: 'fixture-cookie-error',
+        videoId: fixtureVideo.id,
+        title: '需要 Cookie 的失败任务演示',
+        formatId: 'best',
+        container: 'mp4',
+        outputPath: 'C:\\Users\\Demo\\Downloads\\cookie-error.mp4',
+        subtitleLangs: [],
+        subtitleMode: 'none',
+        autoSubtitle: false,
+        status: 'failed',
+        progress: 0,
+        speed: '',
+        eta: '',
+        downloadedBytes: 0,
+        totalBytes: 0,
+        estimatedBytes: 0,
+        retryCount: 0,
+        maxRetries: 2,
+        error: 'YouTube 要求人机验证',
+        errorCode: 'RATE_LIMITED',
+        createdAt: new Date().toISOString(),
       }],
       active: 0,
       waiting: 1,
       completed: 0,
-      failed: 0,
+      failed: 1,
     },
   });
 });

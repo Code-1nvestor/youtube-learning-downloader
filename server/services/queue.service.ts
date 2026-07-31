@@ -317,6 +317,7 @@ export class QueueService {
 
     task.status = 'queued';
     task.error = undefined;
+    task.errorCode = undefined;
     task.retryCount = 0;
     task.maxRetries = this.options.maxRetries;
     task.nextRetryAt = undefined;
@@ -412,6 +413,7 @@ export class QueueService {
     task.status = 'downloading';
     task.progress = 0;
     task.error = undefined;
+    task.errorCode = undefined;
     task.nextRetryAt = undefined;
     this.persistTask(task);
 
@@ -461,6 +463,7 @@ export class QueueService {
         } else {
           task.status = 'failed';
           task.error = err.message;
+          task.errorCode = err.code;
           task.nextRetryAt = undefined;
           this.persistTask(task);
           console.error(`[queue] 任务失败: ${task.title} - ${err.message}`);
@@ -468,6 +471,7 @@ export class QueueService {
       } else {
         task.status = 'failed';
         task.error = '未知错误';
+        task.errorCode = 'UNKNOWN';
         this.persistTask(task);
         console.error(`[queue] 任务异常: ${task.title}`, err);
       }
@@ -487,6 +491,7 @@ export class QueueService {
     task.speed = '';
     task.eta = '';
     task.error = error.message;
+    task.errorCode = error.code;
     task.nextRetryAt = new Date(Date.now() + delayMs).toISOString();
     this.persistTask(task);
     this.armRetryTimer(task, delayMs);

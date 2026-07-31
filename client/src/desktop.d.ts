@@ -5,6 +5,7 @@ declare global {
     desktop?: {
       selectDirectory: () => Promise<string | null>;
       openLogsDirectory: () => Promise<{ path: string; error?: string }>;
+      restartApp: () => Promise<boolean>;
     };
   }
 }
