@@ -23,7 +23,8 @@
  *                ↓
  *             cancelled
  *                ↓
- *              failed -> (retry) -> queued -> downloading
+ *           retrying -> queued -> downloading
+ *              failed -> (manual retry) -> queued -> downloading
  */
 
 import { randomUUID } from 'node:crypto';
@@ -49,27 +50,39 @@ export interface QueueServiceOptions {
   downloadPath: string;
   /** 默认命名模板 */
   namingTemplate: string;
+  /** 新任务的最大自动重试次数 */
+  maxRetries: number;
+}
+
+const RETRYABLE_ERROR_CODES = new Set(['NETWORK_ERROR', 'TIMEOUT']);
+
+export function getRetryDelayMs(retryCount: number): number {
+  return Math.min(2_000 * (2 ** Math.max(retryCount - 1, 0)), 30_000);
 }
 
 export class QueueService {
   private readonly tasks = new Map<string, DownloadTask>();
   private readonly controllers = new Map<string, AbortController>();
+  private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly downloadService: DownloadService;
   private readonly namingService: NamingService;
   private options: QueueServiceOptions;
   private readonly db: DbContext | null;
   private activeCount = 0;
+  private readonly retryDelayCalculator: (retryCount: number) => number;
 
   constructor(
     downloadService: DownloadService,
     namingService: NamingService,
     options: QueueServiceOptions,
     db: DbContext | null = null,
+    retryDelayCalculator: (retryCount: number) => number = getRetryDelayMs,
   ) {
     this.downloadService = downloadService;
     this.namingService = namingService;
     this.options = { ...options, downloadPath: path.resolve(options.downloadPath) };
     this.db = db;
+    this.retryDelayCalculator = retryDelayCalculator;
   }
 
   /** 后续新任务使用新设置；已运行任务不被强制中断。 */
@@ -110,6 +123,7 @@ export class QueueService {
    * 从数据库恢复未完成的任务到内存队列。
    * - downloading -> paused（进程已死，用户需手动恢复或它会被自动调度）
    * - queued 保持不变（会被 tryStartNext 自动拾取）
+   * - retrying 恢复剩余等待时间后自动重试
    * - paused 保持不变
    *
    * 应在服务启动、路由注册前调用。
@@ -133,11 +147,16 @@ export class QueueService {
           this.persistTask(task);
         }
 
+        if (task.status === 'retrying') {
+          const retryAt = task.nextRetryAt ? Date.parse(task.nextRetryAt) : Date.now();
+          this.armRetryTimer(task, Math.max(retryAt - Date.now(), 0));
+        }
+
         this.tasks.set(task.id, task);
         restored++;
 
         // queued 状态的任务会被自动拾取执行
-        if (task.status === 'queued') {
+        if (task.status === 'queued' || task.status === 'retrying') {
           resumed++;
         }
       }
@@ -212,6 +231,11 @@ export class QueueService {
         eta: '',
         downloadedBytes: 0,
         totalBytes: 0,
+        estimatedBytes: Number.isFinite(input.estimatedBytes) && (input.estimatedBytes ?? 0) > 0
+          ? Math.min(Math.floor(input.estimatedBytes!), Number.MAX_SAFE_INTEGER)
+          : 0,
+        retryCount: 0,
+        maxRetries: this.options.maxRetries,
         createdAt: now,
       };
 
@@ -243,7 +267,7 @@ export class QueueService {
     return {
       tasks,
       active: tasks.filter((t) => t.status === 'downloading').length,
-      waiting: tasks.filter((t) => t.status === 'queued').length,
+      waiting: tasks.filter((t) => t.status === 'queued' || t.status === 'retrying').length,
       completed: tasks.filter((t) => t.status === 'completed').length,
       failed: tasks.filter((t) => t.status === 'failed').length,
     };
@@ -259,7 +283,7 @@ export class QueueService {
     if (!task) {
       throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
-    if (task.status !== 'downloading' && task.status !== 'queued') {
+    if (task.status !== 'downloading' && task.status !== 'queued' && task.status !== 'retrying') {
       throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可暂停`);
     }
 
@@ -269,10 +293,12 @@ export class QueueService {
       controller.abort();
       this.controllers.delete(id);
     }
+    this.clearRetryTimer(id);
 
     task.status = 'paused';
     task.speed = '';
     task.eta = '';
+    task.nextRetryAt = undefined;
     this.persistTask(task);
 
     // 暂停释放了执行槽位，尝试启动下一个
@@ -291,6 +317,9 @@ export class QueueService {
 
     task.status = 'queued';
     task.error = undefined;
+    task.retryCount = 0;
+    task.maxRetries = this.options.maxRetries;
+    task.nextRetryAt = undefined;
     this.persistTask(task);
 
     this.tryStartNext();
@@ -309,10 +338,12 @@ export class QueueService {
       controller.abort();
       this.controllers.delete(id);
     }
+    this.clearRetryTimer(id);
 
     task.status = 'cancelled';
     task.speed = '';
     task.eta = '';
+    task.nextRetryAt = undefined;
     this.persistTask(task);
 
     // 删除部分文件（静默失败：文件可能不存在）
@@ -337,6 +368,7 @@ export class QueueService {
       throw new AppError('INVALID_PARAM', '下载中的任务不可直接移除，请先取消');
     }
 
+    this.clearRetryTimer(id);
     this.tasks.delete(id);
     this.deleteTaskFromDb(id);
   }
@@ -379,6 +411,8 @@ export class QueueService {
     // activeCount 已在 tryStartNext() 中递增，此处不再 ++
     task.status = 'downloading';
     task.progress = 0;
+    task.error = undefined;
+    task.nextRetryAt = undefined;
     this.persistTask(task);
 
     // 进度持久化节流：避免每次进度回调都写 DB（高频写影响性能）
@@ -414,6 +448,7 @@ export class QueueService {
       task.speed = '';
       task.eta = '';
       task.completedAt = new Date().toISOString();
+      task.nextRetryAt = undefined;
       this.persistTask(task);
       console.log(`[queue] 任务完成: ${task.title}`);
     } catch (err) {
@@ -421,10 +456,15 @@ export class QueueService {
         // 被 abort（暂停或取消），状态已由 pause()/cancel() 设置
         // 此处无需再覆盖
       } else if (err instanceof AppError) {
-        task.status = 'failed';
-        task.error = err.message;
-        this.persistTask(task);
-        console.error(`[queue] 任务失败: ${task.title} - ${err.message}`);
+        if (RETRYABLE_ERROR_CODES.has(err.code) && task.retryCount < task.maxRetries) {
+          this.scheduleRetry(task, err);
+        } else {
+          task.status = 'failed';
+          task.error = err.message;
+          task.nextRetryAt = undefined;
+          this.persistTask(task);
+          console.error(`[queue] 任务失败: ${task.title} - ${err.message}`);
+        }
       } else {
         task.status = 'failed';
         task.error = '未知错误';
@@ -438,6 +478,45 @@ export class QueueService {
       // 任务结束，尝试启动下一个
       this.tryStartNext();
     }
+  }
+
+  private scheduleRetry(task: DownloadTask, error: AppError): void {
+    task.retryCount += 1;
+    const delayMs = this.retryDelayCalculator(task.retryCount);
+    task.status = 'retrying';
+    task.speed = '';
+    task.eta = '';
+    task.error = error.message;
+    task.nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+    this.persistTask(task);
+    this.armRetryTimer(task, delayMs);
+    const delayLabel = delayMs < 1_000 ? '少于 1 秒' : `${Math.ceil(delayMs / 1000)} 秒`;
+    console.warn(
+      `[queue] 任务暂时失败，将在 ${delayLabel}后自动重试 ` +
+      `(${task.retryCount}/${task.maxRetries}): ${task.title} - ${error.message}`,
+    );
+  }
+
+  private armRetryTimer(task: DownloadTask, delayMs: number): void {
+    this.clearRetryTimer(task.id);
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(task.id);
+      const current = this.tasks.get(task.id);
+      if (!current || current.status !== 'retrying') return;
+      current.status = 'queued';
+      current.nextRetryAt = undefined;
+      this.persistTask(current);
+      this.tryStartNext();
+    }, Math.max(delayMs, 0));
+    timer.unref?.();
+    this.retryTimers.set(task.id, timer);
+  }
+
+  private clearRetryTimer(id: string): void {
+    const timer = this.retryTimers.get(id);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.retryTimers.delete(id);
   }
 
   // ------------------------------------------

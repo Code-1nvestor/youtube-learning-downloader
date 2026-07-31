@@ -5,7 +5,7 @@
  *
  * 轮询策略：
  * - 页面挂载时启动，每 1.5 秒拉取一次队列状态
- * - 有活跃任务（downloading/queued）时持续轮询
+ * - 有活跃任务（downloading/queued/retrying）时持续轮询
  * - 全部完成/失败/取消时停止轮询
  * - 页面卸载时停止轮询
  */
@@ -32,7 +32,7 @@ export function Queue() {
 
         // 有活跃任务时继续轮询，否则停止
         const hasActive = status.tasks.some(
-          (t) => t.status === 'downloading' || t.status === 'queued',
+          (t) => t.status === 'downloading' || t.status === 'queued' || t.status === 'retrying',
         );
         if (!hasActive && polling) {
           setPolling(false);
@@ -120,6 +120,7 @@ function TaskItem({
   const statusColor: Record<string, string> = {
     queued: 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700',
     downloading: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40',
+    retrying: 'text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40',
     completed: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/40',
     failed: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 dark:bg-red-950/40',
     cancelled: 'text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700',
@@ -129,6 +130,7 @@ function TaskItem({
   const statusLabel: Record<string, string> = {
     queued: '排队中',
     downloading: '下载中',
+    retrying: '等待重试',
     completed: '已完成',
     failed: '失败',
     cancelled: '已取消',
@@ -169,11 +171,17 @@ function TaskItem({
         {task.status === 'failed' && task.error && (
           <p className="text-xs text-red-500 dark:text-red-400 mt-1 truncate">{task.error}</p>
         )}
+        {task.status === 'retrying' && (
+          <p className="text-xs text-violet-500 dark:text-violet-400 mt-1 truncate">
+            {task.error ? `${task.error}；` : ''}自动重试 {task.retryCount}/{task.maxRetries}
+            {task.nextRetryAt ? `，预计 ${new Date(task.nextRetryAt).toLocaleTimeString('zh-CN')} 再试` : ''}
+          </p>
+        )}
       </div>
 
       {/* 操作按钮 */}
       <div className="flex gap-1 flex-shrink-0">
-        {(task.status === 'downloading' || task.status === 'queued') && (
+        {(task.status === 'downloading' || task.status === 'queued' || task.status === 'retrying') && (
           <ActionButton onClick={() => onAction(task, 'pause')} title="暂停">
             ⏸
           </ActionButton>
@@ -183,7 +191,7 @@ function TaskItem({
             ▶
           </ActionButton>
         )}
-        {(task.status === 'downloading' || task.status === 'queued' || task.status === 'paused') && (
+        {(task.status === 'downloading' || task.status === 'queued' || task.status === 'retrying' || task.status === 'paused') && (
           <ActionButton onClick={() => onAction(task, 'cancel')} title="取消" danger>
             ✕
           </ActionButton>

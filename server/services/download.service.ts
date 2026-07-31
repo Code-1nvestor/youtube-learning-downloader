@@ -20,8 +20,15 @@
 
 import { runProcessStreaming } from '../core/process.ts';
 import { translateDownloadError } from '../core/yt-dlp-errors.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { CookieArg } from '../types/auth.ts';
 import type { DownloadTask, ProgressInfo } from '../types/download.ts';
+import { AppError } from '../types/errors.ts';
+
+const MIB = 1024 * 1024;
+const UNKNOWN_DOWNLOAD_RESERVE_BYTES = 256 * MIB;
+const DOWNLOAD_OVERHEAD_BYTES = 64 * MIB;
 
 export interface DownloadCallbacks {
   /** 进度更新（每行进度输出触发一次） */
@@ -37,17 +44,21 @@ export interface DownloadServiceOptions {
   ffmpegBinary?: string;
   /** Cookie 参数提供者（可选，运行时动态读取） */
   getCookieArg?: () => CookieArg | undefined;
+  /** 测试或特殊环境可覆盖磁盘可用空间读取；null 表示无法判断。 */
+  getAvailableDiskBytes?: (targetPath: string) => number | null;
 }
 
 export class DownloadService {
   private readonly binary: string;
   private readonly ffmpegBinary?: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
+  private readonly getAvailableDiskBytes: (targetPath: string) => number | null;
 
   constructor(options: DownloadServiceOptions) {
     this.binary = options.binary;
     this.ffmpegBinary = options.ffmpegBinary;
     this.getCookieArg = options.getCookieArg;
+    this.getAvailableDiskBytes = options.getAvailableDiskBytes ?? readAvailableDiskBytes;
   }
 
   /**
@@ -63,6 +74,7 @@ export class DownloadService {
     signal: AbortSignal,
     callbacks: DownloadCallbacks,
   ): Promise<void> {
+    this.checkDiskSpace(task);
     const args = this.buildDownloadArgs(task);
 
     const result = await runProcessStreaming(this.binary, args, {
@@ -84,6 +96,30 @@ export class DownloadService {
     if (result.exitCode !== 0) {
       // 翻译 yt-dlp 错误（复用 yt-dlp.service.ts 的错误模式）
       throw translateDownloadError(result.stderr, task.title);
+    }
+  }
+
+  /** 在启动 yt-dlp 前预留下载、合并与转码所需空间。 */
+  checkDiskSpace(task: DownloadTask): void {
+    let availableBytes: number | null;
+    try {
+      availableBytes = this.getAvailableDiskBytes(path.dirname(task.outputPath));
+    } catch (error) {
+      console.warn('[download] 无法读取磁盘可用空间，将继续下载:', error);
+      return;
+    }
+    if (availableBytes === null) {
+      console.warn('[download] 当前系统不支持磁盘空间预检，将继续下载');
+      return;
+    }
+
+    const requiredBytes = calculateRequiredDiskBytes(task.estimatedBytes, task.downloadedBytes);
+    if (availableBytes < requiredBytes) {
+      throw new AppError(
+        'DISK_FULL',
+        `磁盘剩余空间不足：至少需要 ${formatDiskBytes(requiredBytes)}，当前可用 ${formatDiskBytes(availableBytes)}`,
+        { availableBytes, requiredBytes },
+      );
     }
   }
 
@@ -213,4 +249,26 @@ export class DownloadService {
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GiB`;
   }
+}
+
+export function calculateRequiredDiskBytes(estimatedBytes: number, downloadedBytes = 0): number {
+  if (!Number.isFinite(estimatedBytes) || estimatedBytes <= 0) {
+    return UNKNOWN_DOWNLOAD_RESERVE_BYTES;
+  }
+  const remainingBytes = Math.max(estimatedBytes - Math.max(downloadedBytes, 0), 0);
+  return Math.ceil(remainingBytes * 1.15) + DOWNLOAD_OVERHEAD_BYTES;
+}
+
+function readAvailableDiskBytes(targetPath: string): number | null {
+  if (typeof fs.statfsSync !== 'function') return null;
+  const stats = fs.statfsSync(targetPath, { bigint: true });
+  const available = stats.bavail * stats.bsize;
+  return available > BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number.MAX_SAFE_INTEGER
+    : Number(available);
+}
+
+function formatDiskBytes(bytes: number): string {
+  if (bytes < 1024 * MIB) return `${Math.ceil(bytes / MIB)} MiB`;
+  return `${(bytes / (1024 * MIB)).toFixed(1)} GiB`;
 }

@@ -24,6 +24,7 @@ test('persists application settings and reloads them after restart', () => {
       {
         downloadPath: defaultDownloadPath,
         maxConcurrent: 2,
+        maxRetries: 2,
         namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
       },
       db,
@@ -32,10 +33,12 @@ test('persists application settings and reloads them after restart', () => {
     const updated = service.update({
       downloadPath: customDownloadPath,
       maxConcurrent: 4,
+      maxRetries: 3,
       namingTemplate: '{course}/{num}_{title}.{ext}',
     });
     assert.equal(updated.persistent, true);
     assert.equal(updated.maxConcurrent, 4);
+    assert.equal(updated.maxRetries, 3);
     assert.equal(updated.downloadPath, path.resolve(customDownloadPath));
     assert.equal(fs.existsSync(customDownloadPath), true);
 
@@ -45,6 +48,7 @@ test('persists application settings and reloads them after restart', () => {
       {
         downloadPath: defaultDownloadPath,
         maxConcurrent: 1,
+        maxRetries: 1,
         namingTemplate: '{title}.{ext}',
       },
       db,
@@ -52,6 +56,7 @@ test('persists application settings and reloads them after restart', () => {
 
     assert.equal(restored.downloadPath, path.resolve(customDownloadPath));
     assert.equal(restored.maxConcurrent, 4);
+    assert.equal(restored.maxRetries, 3);
     assert.equal(restored.namingTemplate, '{course}/{num}_{title}.{ext}');
   } finally {
     db?.close();
@@ -65,12 +70,15 @@ test('rejects unsafe or invalid application settings', () => {
     const service = new SettingsService({
       downloadPath: path.join(root, 'downloads'),
       maxConcurrent: 2,
+      maxRetries: 2,
       namingTemplate: '{title}.{ext}',
     });
 
     assert.throws(() => service.update({ downloadPath: 'relative/downloads' }), assertAppError('PATH_NOT_ALLOWED'));
     assert.throws(() => service.update({ maxConcurrent: 0 }), assertAppError('INVALID_PARAM'));
     assert.throws(() => service.update({ maxConcurrent: 9 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ maxRetries: -1 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ maxRetries: 6 }), assertAppError('INVALID_PARAM'));
     assert.throws(
       () => service.update({ namingTemplate: '../outside/{title}.{ext}' }),
       assertAppError('PATH_NOT_ALLOWED'),
@@ -103,6 +111,7 @@ test('falls back to the default directory when a persisted path is unavailable',
       {
         downloadPath: defaultPath,
         maxConcurrent: 2,
+        maxRetries: 2,
         namingTemplate: '{title}.{ext}',
       },
       db,

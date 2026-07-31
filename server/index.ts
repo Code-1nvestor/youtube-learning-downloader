@@ -99,6 +99,7 @@ async function main(): Promise<void> {
   const settingsService = new SettingsService(
     {
       maxConcurrent: config.maxConcurrent,
+      maxRetries: config.maxRetries,
       downloadPath: config.downloadPath,
       namingTemplate: config.namingTemplate,
     },
@@ -117,6 +118,7 @@ async function main(): Promise<void> {
     namingService,
     {
       maxConcurrent: appSettings.maxConcurrent,
+      maxRetries: appSettings.maxRetries,
       downloadPath: appSettings.downloadPath,
       namingTemplate: appSettings.namingTemplate,
     },
@@ -125,6 +127,7 @@ async function main(): Promise<void> {
 
   console.log(`[startup] 下载目录: ${appSettings.downloadPath}`);
   console.log(`[startup] 最大并发: ${appSettings.maxConcurrent}`);
+  console.log(`[startup] 自动重试: ${appSettings.maxRetries} 次`);
   console.log(`[startup] 命名模板: ${appSettings.namingTemplate}`);
   console.log(`[startup] Cookie 状态: ${cookieService.getStatus().source}`);
 

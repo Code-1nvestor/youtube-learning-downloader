@@ -25,6 +25,8 @@ export interface AppConfig {
   downloadPath: string;
   /** 最大并发下载数 */
   maxConcurrent: number;
+  /** 网络错误或超时时，单个任务最多自动重试次数 */
+  maxRetries: number;
   /** 默认文件命名模板 */
   namingTemplate: string;
   /** SQLite 数据库文件路径 */
@@ -46,6 +48,7 @@ const DEFAULTS: AppConfig = {
   resolveTimeoutMs: 60_000,
   downloadPath: '',
   maxConcurrent: 2,
+  maxRetries: 2,
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
   dbPath: '',
   isDev: process.env.NODE_ENV !== 'production',
@@ -90,11 +93,16 @@ export function loadConfig(): AppConfig {
       process.env.RESOLVE_TIMEOUT_MS,
       DEFAULTS.resolveTimeoutMs,
     ),
-    downloadPath: process.env.DOWNLOAD_PATH ?? defaultDownloadPath,
+    downloadPath: path.resolve(process.env.DOWNLOAD_PATH ?? defaultDownloadPath),
     maxConcurrent: clamp(
       parseIntWithFallback(process.env.MAX_CONCURRENT, DEFAULTS.maxConcurrent),
       1,
       8,
+    ),
+    maxRetries: clamp(
+      parseIntWithFallback(process.env.MAX_RETRIES, DEFAULTS.maxRetries),
+      0,
+      5,
     ),
     namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
     dbPath: process.env.DB_PATH ?? defaultDbPath,

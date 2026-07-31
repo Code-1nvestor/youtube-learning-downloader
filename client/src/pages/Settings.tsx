@@ -75,6 +75,8 @@ export function Settings() {
 
       <RuntimeSection health={health} />
 
+      <DiagnosticsSection />
+
       {/* Cookie 配置 */}
       <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
         <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">Cookie 配置</h2>
@@ -152,6 +154,7 @@ function DownloadSettingsSection() {
   const [settings, setSettings] = useState<AppSettingsStatus | null>(null);
   const [downloadPath, setDownloadPath] = useState('');
   const [maxConcurrent, setMaxConcurrent] = useState(2);
+  const [maxRetries, setMaxRetries] = useState(2);
   const [namingTemplate, setNamingTemplate] = useState('{course}/{date}_{num}_{title}.{ext}');
   const [saving, setSaving] = useState(false);
 
@@ -163,6 +166,7 @@ function DownloadSettingsSection() {
         setSettings(value);
         setDownloadPath(value.downloadPath);
         setMaxConcurrent(value.maxConcurrent);
+        setMaxRetries(value.maxRetries);
         setNamingTemplate(value.namingTemplate);
       })
       .catch((error) => {
@@ -184,11 +188,13 @@ function DownloadSettingsSection() {
       const value = await api.updateSettings({
         downloadPath: downloadPath.trim(),
         maxConcurrent,
+        maxRetries,
         namingTemplate: namingTemplate.trim(),
       });
       setSettings(value);
       setDownloadPath(value.downloadPath);
       setMaxConcurrent(value.maxConcurrent);
+      setMaxRetries(value.maxRetries);
       setNamingTemplate(value.namingTemplate);
       notify(value.persistent ? '下载设置已保存' : '设置已应用，但数据库不可用，重启后会恢复默认值');
     } catch (error) {
@@ -243,7 +249,7 @@ function DownloadSettingsSection() {
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">目录不存在时会自动创建。</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
               同时下载数量
@@ -260,6 +266,22 @@ function DownloadSettingsSection() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              网络失败自动重试
+            </label>
+            <select
+              value={maxRetries}
+              onChange={(event) => setMaxRetries(Number(event.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {[0, 1, 2, 3, 4, 5].map((value) => (
+                <option key={value} value={value}>{value === 0 ? '不自动重试' : `${value} 次`}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
               文件命名规则
             </label>
             <input
@@ -270,7 +292,6 @@ function DownloadSettingsSection() {
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
               可用变量：{'{course}'} {'{date}'} {'{num}'} {'{title}'} {'{quality}'} {'{ext}'}；必须包含 {'{title}'} 和 {'{ext}'}。
             </p>
-          </div>
         </div>
 
         <div className="flex justify-end">
@@ -283,6 +304,42 @@ function DownloadSettingsSection() {
           </button>
         </div>
       </div>
+    </section>
+  );
+}
+
+function DiagnosticsSection() {
+  const { notify } = useStore();
+  const [opening, setOpening] = useState(false);
+  const desktopAvailable = Boolean(window.desktop);
+
+  const openLogs = async () => {
+    if (!window.desktop) return;
+    setOpening(true);
+    try {
+      const result = await window.desktop.openLogsDirectory();
+      notify(result.error ? `无法打开日志目录：${result.error}` : `已打开日志目录：${result.path}`);
+    } catch {
+      notify('无法打开日志目录');
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  return (
+    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">诊断与日志</h2>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+        下载失败时可打开应用日志目录，把 backend.log 提供给开发者定位问题。
+      </p>
+      <button
+        type="button"
+        onClick={openLogs}
+        disabled={!desktopAvailable || opening}
+        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
+      >
+        {opening ? '正在打开…' : desktopAvailable ? '打开日志目录' : '仅桌面版可用'}
+      </button>
     </section>
   );
 }

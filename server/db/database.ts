@@ -20,7 +20,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 /** 当前 Schema 版本 */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** 预编译语句句柄（init 后填充） */
 export interface PreparedStatements {
@@ -76,14 +76,16 @@ export function initDatabase(dbPath: string): DbContext {
         format_id, container, output_path,
         subtitle_langs, subtitle_mode, auto_subtitle,
         status, progress, speed, eta,
-        downloaded_bytes, total_bytes, error,
+        downloaded_bytes, total_bytes, estimated_bytes,
+        retry_count, max_retries, next_retry_at, error,
         created_at, completed_at, updated_at
       ) VALUES (
         $id, $video_id, $title, $playlist_title, $playlist_index,
         $format_id, $container, $output_path,
         $subtitle_langs, $subtitle_mode, $auto_subtitle,
         $status, $progress, $speed, $eta,
-        $downloaded_bytes, $total_bytes, $error,
+        $downloaded_bytes, $total_bytes, $estimated_bytes,
+        $retry_count, $max_retries, $next_retry_at, $error,
         $created_at, $completed_at, $updated_at
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -93,6 +95,10 @@ export function initDatabase(dbPath: string): DbContext {
         eta = $eta,
         downloaded_bytes = $downloaded_bytes,
         total_bytes = $total_bytes,
+        estimated_bytes = $estimated_bytes,
+        retry_count = $retry_count,
+        max_retries = $max_retries,
+        next_retry_at = $next_retry_at,
         error = $error,
         completed_at = $completed_at,
         updated_at = $updated_at
@@ -102,7 +108,7 @@ export function initDatabase(dbPath: string): DbContext {
 
     getActiveTasks: db.prepare(`
       SELECT * FROM download_tasks
-      WHERE status IN ('queued', 'downloading', 'paused')
+      WHERE status IN ('queued', 'downloading', 'retrying', 'paused')
       ORDER BY created_at ASC
     `),
 
@@ -198,7 +204,24 @@ function migrate(db: DatabaseSync): void {
     `);
   }
 
-  // 未来迁移在此追加 if (version < 2) { ... }
+  if (version < 2) {
+    // 逐列检查让迁移具备幂等性：即使上次启动在中途退出，也能安全续跑。
+    addColumnIfMissing(db, 'download_tasks', 'estimated_bytes', 'INTEGER NOT NULL DEFAULT 0');
+    addColumnIfMissing(db, 'download_tasks', 'retry_count', 'INTEGER NOT NULL DEFAULT 0');
+    addColumnIfMissing(db, 'download_tasks', 'max_retries', 'INTEGER NOT NULL DEFAULT 2');
+    addColumnIfMissing(db, 'download_tasks', 'next_retry_at', 'TEXT');
+  }
 
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+}
+
+function addColumnIfMissing(
+  db: DatabaseSync,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: string }>;
+  if (columns.some((item) => item.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }

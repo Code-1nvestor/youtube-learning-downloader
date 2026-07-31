@@ -44,6 +44,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
   const settings = new SettingsService({
     downloadPath,
     maxConcurrent: 1,
+    maxRetries: 2,
     namingTemplate: 'integration/{title}.{ext}',
   }, db);
 
@@ -86,6 +87,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     resolveTimeoutMs: 1_000,
     downloadPath,
     maxConcurrent: 1,
+    maxRetries: 2,
     namingTemplate: 'integration/{title}.{ext}',
     dbPath: databasePath,
     isDev: true,

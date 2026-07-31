@@ -217,6 +217,13 @@ function registerIpcHandlers() {
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
+
+  ipcMain.handle('desktop:open-logs-directory', async () => {
+    const logsDir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const error = await shell.openPath(logsDir);
+    return error ? { path: logsDir, error } : { path: logsDir };
+  });
 }
 
 async function startDesktopApp() {

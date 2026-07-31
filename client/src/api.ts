@@ -96,6 +96,7 @@ export type ResolveResult =
 export type DownloadStatus =
   | 'queued'
   | 'downloading'
+  | 'retrying'
   | 'completed'
   | 'failed'
   | 'cancelled'
@@ -119,6 +120,10 @@ export interface DownloadTask {
   eta: string;
   downloadedBytes: number;
   totalBytes: number;
+  estimatedBytes: number;
+  retryCount: number;
+  maxRetries: number;
+  nextRetryAt?: string;
   error?: string;
   createdAt: string;
   completedAt?: string;
@@ -166,12 +171,13 @@ export interface HealthStatus {
 export interface AppSettingsStatus {
   downloadPath: string;
   maxConcurrent: number;
+  maxRetries: number;
   namingTemplate: string;
   persistent: boolean;
 }
 
 export type UpdateAppSettingsInput = Partial<
-  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'namingTemplate'>
+  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'maxRetries' | 'namingTemplate'>
 >;
 
 export interface CreateDownloadTaskInput {
@@ -184,6 +190,7 @@ export interface CreateDownloadTaskInput {
   subtitleLangs?: string[];
   subtitleMode?: 'embed' | 'separate' | 'none';
   autoSubtitle?: boolean;
+  estimatedBytes?: number;
 }
 
 // ==========================================

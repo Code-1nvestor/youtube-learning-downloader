@@ -145,6 +145,9 @@ function SingleVideoDownload({
         ...(video.playlistIndex ? { playlistIndex: video.playlistIndex } : {}),
         container: outputContainer,
         formatId,
+        ...(selectedActualFormat?.format.filesize
+          ? { estimatedBytes: selectedActualFormat.format.filesize }
+          : {}),
         subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
         subtitleMode,
         autoSubtitle: subtitleMode !== 'none' && autoSubtitle,

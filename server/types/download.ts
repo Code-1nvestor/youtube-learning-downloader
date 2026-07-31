@@ -9,10 +9,11 @@
 // 下载任务
 // ————————————————————————————————————————————
 
-/** 任务状态机：queued → downloading → completed / failed / cancelled */
+/** 任务状态机：queued → downloading → completed / retrying / failed / cancelled */
 export type DownloadStatus =
   | 'queued'        // 已入队，等待分配执行槽位
   | 'downloading'   // 正在下载
+  | 'retrying'      // 暂时失败，等待自动重试
   | 'completed'     // 下载成功
   | 'failed'        // 下载失败（可重试）
   | 'cancelled'     // 用户取消
@@ -55,6 +56,14 @@ export interface DownloadTask {
   downloadedBytes: number;
   /** 总字节数（yt-dlp 不总是提供） */
   totalBytes: number;
+  /** 创建任务时已知的文件估算大小；未知时为 0 */
+  estimatedBytes: number;
+  /** 已执行的自动重试次数 */
+  retryCount: number;
+  /** 此任务允许的最大自动重试次数 */
+  maxRetries: number;
+  /** 下一次自动重试时间 ISO 8601（仅 retrying 状态存在） */
+  nextRetryAt?: string;
   /** 错误信息（status=failed 时填充） */
   error?: string;
   /** 创建时间 ISO 8601 */
@@ -102,6 +111,8 @@ export interface CreateDownloadTaskInput {
   subtitleMode?: 'embed' | 'separate' | 'none';
   /** 自动字幕兜底，默认 false */
   autoSubtitle?: boolean;
+  /** 所选格式的估算字节数，用于下载前磁盘空间检查 */
+  estimatedBytes?: number;
 }
 
 /** POST /api/download 响应 */

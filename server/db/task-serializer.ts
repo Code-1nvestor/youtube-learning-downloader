@@ -29,6 +29,10 @@ export interface TaskRow {
   eta: string;
   downloaded_bytes: number;
   total_bytes: number;
+  estimated_bytes: number;
+  retry_count: number;
+  max_retries: number;
+  next_retry_at: string | null;
   error: string | null;
   created_at: string;
   completed_at: string | null;
@@ -55,6 +59,10 @@ export function taskToRow(task: DownloadTask): Record<string, SqlValue> {
     $eta: task.eta,
     $downloaded_bytes: task.downloadedBytes,
     $total_bytes: task.totalBytes,
+    $estimated_bytes: task.estimatedBytes,
+    $retry_count: task.retryCount,
+    $max_retries: task.maxRetries,
+    $next_retry_at: task.nextRetryAt ?? null,
     $error: task.error ?? null,
     $created_at: task.createdAt,
     $completed_at: task.completedAt ?? null,
@@ -82,6 +90,10 @@ export function rowToTask(row: TaskRow): DownloadTask {
     eta: row.eta,
     downloadedBytes: row.downloaded_bytes,
     totalBytes: row.total_bytes,
+    estimatedBytes: row.estimated_bytes,
+    retryCount: row.retry_count,
+    maxRetries: row.max_retries,
+    ...(row.next_retry_at ? { nextRetryAt: row.next_retry_at } : {}),
     ...(row.error ? { error: row.error } : {}),
     createdAt: row.created_at,
     ...(row.completed_at ? { completedAt: row.completed_at } : {}),

@@ -2,6 +2,7 @@
 export interface AppSettings {
   downloadPath: string;
   maxConcurrent: number;
+  maxRetries: number;
   namingTemplate: string;
 }
 

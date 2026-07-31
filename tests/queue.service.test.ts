@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { initDatabase } from '../server/db/database.ts';
+import { taskToRow } from '../server/db/task-serializer.ts';
 import type { DownloadService } from '../server/services/download.service.ts';
 import { NamingService } from '../server/services/naming.service.ts';
 import { QueueService } from '../server/services/queue.service.ts';
@@ -46,6 +48,7 @@ test('pause and cancel never exceed the configured concurrency', async () => {
     new NamingService(),
     {
       maxConcurrent: 1,
+      maxRetries: 2,
       downloadPath: outputRoot,
       namingTemplate: '{title}.{ext}',
     },
@@ -85,6 +88,7 @@ test('rejects an output path that escapes the download root', () => {
     new NamingService(),
     {
       maxConcurrent: 1,
+      maxRetries: 2,
       downloadPath: outputRoot,
       namingTemplate: '../outside/{title}.{ext}',
     },
@@ -96,6 +100,124 @@ test('rejects an output path that escapes the download root', () => {
       (error: unknown) => error instanceof AppError && error.code === 'PATH_NOT_ALLOWED',
     );
   } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+class FlakyDownloadService {
+  attempts = 0;
+
+  constructor(
+    private readonly failures: number,
+    private readonly code: AppError['code'] = 'NETWORK_ERROR',
+  ) {}
+
+  async download(): Promise<void> {
+    this.attempts++;
+    if (this.attempts <= this.failures) {
+      throw new AppError(this.code, `temporary failure ${this.attempts}`);
+    }
+  }
+}
+
+test('automatically retries transient failures and eventually completes', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-retry-'));
+  const flaky = new FlakyDownloadService(1);
+  const queue = new QueueService(
+    flaky as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+    null,
+    () => 10,
+  );
+
+  try {
+    const [taskId] = queue.enqueue([{ videoId: 'retry-video', title: 'retry' }]);
+    await waitUntil(() => queue.getTask(taskId!)?.status === 'completed');
+    assert.equal(flaky.attempts, 2);
+    assert.equal(queue.getTask(taskId!)?.retryCount, 1);
+  } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test('does not automatically retry non-transient failures', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-no-retry-'));
+  const unavailable = new FlakyDownloadService(1, 'VIDEO_UNAVAILABLE');
+  const queue = new QueueService(
+    unavailable as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+  );
+
+  try {
+    const [taskId] = queue.enqueue([{ videoId: 'unavailable-video', title: 'unavailable' }]);
+    await waitUntil(() => queue.getTask(taskId!)?.status === 'failed');
+    assert.equal(unavailable.attempts, 1);
+    assert.equal(queue.getTask(taskId!)?.retryCount, 0);
+  } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test('restores a persisted retry timer after restart without duplicating the task', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-restore-retry-'));
+  const db = initDatabase(path.join(outputRoot, 'data', 'app.db'));
+  const persistedTask: DownloadTask = {
+    id: 'persisted-retry',
+    videoId: 'persisted-video',
+    title: 'persisted retry',
+    formatId: 'best',
+    container: 'mp4',
+    outputPath: path.join(outputRoot, 'persisted.mp4'),
+    subtitleLangs: [],
+    subtitleMode: 'none',
+    autoSubtitle: false,
+    status: 'retrying',
+    progress: 25,
+    speed: '',
+    eta: '',
+    downloadedBytes: 100,
+    totalBytes: 400,
+    estimatedBytes: 400,
+    retryCount: 1,
+    maxRetries: 2,
+    nextRetryAt: new Date(Date.now() - 1_000).toISOString(),
+    error: 'temporary network error',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  };
+  db.stmts.upsertTask.run(taskToRow(persistedTask));
+  const succeeding = new FlakyDownloadService(0);
+  const queue = new QueueService(
+    succeeding as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+    db,
+    () => 10,
+  );
+
+  try {
+    assert.deepEqual(queue.restoreFromDb(), { restored: 1, resumed: 1 });
+    await waitUntil(() => queue.getTask('persisted-retry')?.status === 'completed');
+    assert.equal(succeeding.attempts, 1);
+    assert.equal(queue.getAllTasks().filter((task) => task.id === 'persisted-retry').length, 1);
+  } finally {
+    db.close();
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }
 });

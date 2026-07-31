@@ -14,6 +14,14 @@ const app = express();
 
 app.use(express.json());
 
+let fixtureSettings = {
+  downloadPath: 'C:\\Users\\Demo\\Downloads\\YouTube Learning Downloader',
+  maxConcurrent: 2,
+  maxRetries: 2,
+  namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
+  persistent: true,
+};
+
 const fixtureVideo = {
   id: 'YE7VzlLtp-4',
   title: 'UI 验收课程：格式与字幕功能演示',
@@ -88,6 +96,15 @@ app.get('/api/resolve', (_request, response) => {
   });
 });
 
+app.get('/api/settings', (_request, response) => {
+  response.json({ success: true, data: fixtureSettings });
+});
+
+app.put('/api/settings', (request, response) => {
+  fixtureSettings = { ...fixtureSettings, ...request.body, persistent: true };
+  response.json({ success: true, data: fixtureSettings });
+});
+
 app.get('/api/subtitle/preview', (request, response) => {
   const language = String(request.query.language ?? 'zh-Hans');
   response.json({
@@ -125,7 +142,35 @@ app.post('/api/download', (_request, response) => {
 app.get('/api/queue', (_request, response) => {
   response.json({
     success: true,
-    data: { tasks: [], active: 0, waiting: 0, completed: 0, failed: 0 },
+    data: {
+      tasks: [{
+        id: 'fixture-retry',
+        videoId: fixtureVideo.id,
+        title: '网络中断后的自动恢复演示',
+        formatId: '137+bestaudio[ext=m4a]',
+        container: 'mp4',
+        outputPath: 'C:\\Users\\Demo\\Downloads\\retry.mp4',
+        subtitleLangs: [],
+        subtitleMode: 'none',
+        autoSubtitle: false,
+        status: 'retrying',
+        progress: 37,
+        speed: '',
+        eta: '',
+        downloadedBytes: 19_398_656,
+        totalBytes: 52_428_800,
+        estimatedBytes: 52_428_800,
+        retryCount: 1,
+        maxRetries: 2,
+        nextRetryAt: new Date(Date.now() + 30_000).toISOString(),
+        error: '网络连接暂时中断',
+        createdAt: new Date().toISOString(),
+      }],
+      active: 0,
+      waiting: 1,
+      completed: 0,
+      failed: 0,
+    },
   });
 });
 

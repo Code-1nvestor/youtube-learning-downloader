@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DownloadService } from '../server/services/download.service.ts';
+import { calculateRequiredDiskBytes, DownloadService } from '../server/services/download.service.ts';
+import { AppError } from '../server/types/errors.ts';
 import type { DownloadTask } from '../server/types/download.ts';
 
 function createTask(overrides: Partial<DownloadTask> = {}): DownloadTask {
@@ -20,6 +21,9 @@ function createTask(overrides: Partial<DownloadTask> = {}): DownloadTask {
     eta: '',
     downloadedBytes: 0,
     totalBytes: 0,
+    estimatedBytes: 0,
+    retryCount: 0,
+    maxRetries: 2,
     createdAt: '2026-08-01T00:00:00.000Z',
     ...overrides,
   };
@@ -54,6 +58,34 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
     'C:\\Data\\cookies.txt',
     'https://www.youtube.com/watch?v=BaW_jenozKc',
   ]);
+});
+
+test('blocks a download before launch when disk space is insufficient', () => {
+  const estimatedBytes = 400 * 1024 * 1024;
+  const service = new DownloadService({
+    binary: 'yt-dlp',
+    getAvailableDiskBytes: () => 100 * 1024 * 1024,
+  });
+
+  assert.throws(
+    () => service.checkDiskSpace(createTask({ estimatedBytes })),
+    (error: unknown) => error instanceof AppError && error.code === 'DISK_FULL',
+  );
+  assert.equal(calculateRequiredDiskBytes(0), 256 * 1024 * 1024);
+});
+
+test('allows a download when disk space is sufficient or cannot be read', () => {
+  const sufficient = new DownloadService({
+    binary: 'yt-dlp',
+    getAvailableDiskBytes: () => 2 * 1024 * 1024 * 1024,
+  });
+  const unknown = new DownloadService({
+    binary: 'yt-dlp',
+    getAvailableDiskBytes: () => null,
+  });
+
+  assert.doesNotThrow(() => sufficient.checkDiskSpace(createTask({ estimatedBytes: 400 * 1024 * 1024 })));
+  assert.doesNotThrow(() => unknown.checkDiskSpace(createTask()));
 });
 
 test('extracts real MP3 and M4A audio instead of only changing the file extension', () => {

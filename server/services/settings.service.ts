@@ -8,7 +8,7 @@ import type {
   UpdateAppSettingsInput,
 } from '../types/settings.ts';
 
-const SETTING_KEYS = ['downloadPath', 'maxConcurrent', 'namingTemplate'] as const;
+const SETTING_KEYS = ['downloadPath', 'maxConcurrent', 'maxRetries', 'namingTemplate'] as const;
 const ALLOWED_TEMPLATE_TOKENS = new Set([
   'course',
   'date',
@@ -107,8 +107,9 @@ export class SettingsService {
   private validate(settings: AppSettings): AppSettings {
     const downloadPath = this.validateDownloadPath(settings.downloadPath);
     const maxConcurrent = this.validateMaxConcurrent(settings.maxConcurrent);
+    const maxRetries = this.validateMaxRetries(settings.maxRetries);
     const namingTemplate = this.validateNamingTemplate(settings.namingTemplate);
-    return { downloadPath, maxConcurrent, namingTemplate };
+    return { downloadPath, maxConcurrent, maxRetries, namingTemplate };
   }
 
   private validateDownloadPath(value: unknown): string {
@@ -125,6 +126,13 @@ export class SettingsService {
   private validateMaxConcurrent(value: unknown): number {
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 8) {
       throw new AppError('INVALID_PARAM', '并发下载数必须是 1 到 8 之间的整数');
+    }
+    return value;
+  }
+
+  private validateMaxRetries(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 5) {
+      throw new AppError('INVALID_PARAM', '自动重试次数必须是 0 到 5 之间的整数');
     }
     return value;
   }
