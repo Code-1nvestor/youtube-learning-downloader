@@ -10,6 +10,7 @@ import type { AppConfig } from '../server/config.ts';
 import type { YtDlpService } from '../server/core/yt-dlp.service.ts';
 import { initDatabase, type DbContext } from '../server/db/database.ts';
 import { CookieService } from '../server/services/cookie.service.ts';
+import { ConnectivityService } from '../server/services/connectivity.service.ts';
 import type { DownloadService } from '../server/services/download.service.ts';
 import { HistoryService } from '../server/services/history.service.ts';
 import { NamingService } from '../server/services/naming.service.ts';
@@ -47,6 +48,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     maxConcurrent: 1,
     maxRetries: 2,
     namingTemplate: 'integration/{title}.{ext}',
+    proxyUrl: '',
   }, db);
 
   const fakeYtDlp = {
@@ -87,6 +89,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     appDataPath: tempDir,
     resourcePath: tempDir,
   });
+  const connectivity = new ConnectivityService(fakeYtDlp, settings, cookie);
   const config: AppConfig = {
     port: 0,
     ytDlpBinary: 'fake-yt-dlp',
@@ -96,6 +99,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     maxConcurrent: 1,
     maxRetries: 2,
     namingTemplate: 'integration/{title}.{ext}',
+    proxyUrl: '',
     dbPath: databasePath,
     isDev: true,
     webDistPath: path.join(tempDir, 'missing-client'),
@@ -111,6 +115,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     history,
     settings,
     toolUpdate,
+    connectivity,
     {
       ytDlp: { available: true, version: 'fake' },
       ffmpeg: { available: true, version: 'fake' },
@@ -183,6 +188,15 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     );
     assert.equal(updateStatus.updateSupported, false);
     assert.equal(updateStatus.channel, 'nightly');
+
+    const connectivity = await apiRequest<{ ok: boolean; code: string; videoTitle?: string }>(
+      harness.baseUrl,
+      '/api/runtime/connectivity',
+      { method: 'POST' },
+    );
+    assert.equal(connectivity.ok, true);
+    assert.equal(connectivity.code, 'OK');
+    assert.equal(connectivity.videoTitle, fakeResolveResult.title);
 
     const blocked = await fetch(`${harness.baseUrl}/api/runtime/yt-dlp/update`, {
       method: 'POST',

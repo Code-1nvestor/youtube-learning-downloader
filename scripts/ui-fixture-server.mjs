@@ -33,6 +33,7 @@ let fixtureSettings = {
   maxConcurrent: 2,
   maxRetries: 2,
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
+  proxyUrl: '',
   persistent: true,
 };
 
@@ -130,6 +131,22 @@ app.post('/api/runtime/yt-dlp/update', (_request, response) => {
       updateSupported: true,
       channel: 'nightly',
       restartRequired: true,
+    },
+  });
+});
+
+app.post('/api/runtime/connectivity', (_request, response) => {
+  response.json({
+    success: true,
+    data: {
+      ok: false,
+      code: 'RATE_LIMITED',
+      message: 'YouTube 要求进行人机验证',
+      recommendation: '网络已到达 YouTube，但对方要求验证身份；请配置 Cookie 后重试。',
+      testedAt: new Date().toISOString(),
+      elapsedMs: 1260,
+      proxyConfigured: Boolean(fixtureSettings.proxyUrl),
+      cookieConfigured: false,
     },
   });
 });

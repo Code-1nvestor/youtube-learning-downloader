@@ -20,6 +20,7 @@
 
 import { runProcessStreaming } from '../core/process.ts';
 import { translateDownloadError } from '../core/yt-dlp-errors.ts';
+import { getYtDlpNetworkArgs } from '../core/yt-dlp-network.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CookieArg } from '../types/auth.ts';
@@ -44,6 +45,8 @@ export interface DownloadServiceOptions {
   ffmpegBinary?: string;
   /** Cookie 参数提供者（可选，运行时动态读取） */
   getCookieArg?: () => CookieArg | undefined;
+  /** 代理地址提供者（可选，运行时动态读取） */
+  getProxyUrl?: () => string | undefined;
   /** 测试或特殊环境可覆盖磁盘可用空间读取；null 表示无法判断。 */
   getAvailableDiskBytes?: (targetPath: string) => number | null;
 }
@@ -52,12 +55,14 @@ export class DownloadService {
   private readonly binary: string;
   private readonly ffmpegBinary?: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
+  private readonly getProxyUrl?: () => string | undefined;
   private readonly getAvailableDiskBytes: (targetPath: string) => number | null;
 
   constructor(options: DownloadServiceOptions) {
     this.binary = options.binary;
     this.ffmpegBinary = options.ffmpegBinary;
     this.getCookieArg = options.getCookieArg;
+    this.getProxyUrl = options.getProxyUrl;
     this.getAvailableDiskBytes = options.getAvailableDiskBytes ?? readAvailableDiskBytes;
   }
 
@@ -186,11 +191,8 @@ export class DownloadService {
     args.push('--no-warnings');
     args.push('--no-playlist');
 
-    // 注入 Cookie 参数（在 URL 之前）
-    const cookieArg = this.getCookieArg?.();
-    if (cookieArg) {
-      args.push(cookieArg.flag, cookieArg.value);
-    }
+    // 注入代理与 Cookie 参数（在 URL 之前）
+    args.push(...getYtDlpNetworkArgs(this.getProxyUrl, this.getCookieArg));
 
     // 目标 URL
     args.push(`https://www.youtube.com/watch?v=${task.videoId}`);

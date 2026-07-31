@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { asyncHandler } from '../core/utils.ts';
 import type { QueueService } from '../services/queue.service.ts';
 import type { ToolUpdateService } from '../services/tool-update.service.ts';
+import type { ConnectivityService } from '../services/connectivity.service.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
 
 export function createRuntimeRouter(
   toolUpdateService: ToolUpdateService,
   queueService: QueueService,
+  connectivityService: ConnectivityService,
 ): Router {
   const router = Router();
 
@@ -22,6 +24,13 @@ export function createRuntimeRouter(
         throw new AppError('INVALID_PARAM', '请先暂停正在下载的任务，再更新 yt-dlp');
       }
       res.json(ok(await toolUpdateService.updateYtDlp()));
+    }),
+  );
+
+  router.post(
+    '/connectivity',
+    asyncHandler(async (_req, res) => {
+      res.json(ok(await connectivityService.testYouTube()));
     }),
   );
 

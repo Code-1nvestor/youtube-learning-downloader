@@ -18,3 +18,15 @@ export interface YtDlpUpdateStatus {
   restartRequired: boolean;
   message?: string;
 }
+
+export interface ConnectivityStatus {
+  ok: boolean;
+  code: 'OK' | import('./errors.ts').ErrorCode;
+  message: string;
+  recommendation?: string;
+  testedAt: string;
+  elapsedMs: number;
+  proxyConfigured: boolean;
+  cookieConfigured: boolean;
+  videoTitle?: string;
+}

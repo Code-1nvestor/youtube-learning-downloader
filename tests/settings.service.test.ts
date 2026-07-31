@@ -26,6 +26,7 @@ test('persists application settings and reloads them after restart', () => {
         maxConcurrent: 2,
         maxRetries: 2,
         namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
+        proxyUrl: '',
       },
       db,
     );
@@ -35,6 +36,7 @@ test('persists application settings and reloads them after restart', () => {
       maxConcurrent: 4,
       maxRetries: 3,
       namingTemplate: '{course}/{num}_{title}.{ext}',
+      proxyUrl: 'http://127.0.0.1:7890',
     });
     assert.equal(updated.persistent, true);
     assert.equal(updated.maxConcurrent, 4);
@@ -50,6 +52,7 @@ test('persists application settings and reloads them after restart', () => {
         maxConcurrent: 1,
         maxRetries: 1,
         namingTemplate: '{title}.{ext}',
+        proxyUrl: '',
       },
       db,
     ).getStatus();
@@ -58,6 +61,7 @@ test('persists application settings and reloads them after restart', () => {
     assert.equal(restored.maxConcurrent, 4);
     assert.equal(restored.maxRetries, 3);
     assert.equal(restored.namingTemplate, '{course}/{num}_{title}.{ext}');
+    assert.equal(restored.proxyUrl, 'http://127.0.0.1:7890');
   } finally {
     db?.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -72,6 +76,7 @@ test('rejects unsafe or invalid application settings', () => {
       maxConcurrent: 2,
       maxRetries: 2,
       namingTemplate: '{title}.{ext}',
+      proxyUrl: '',
     });
 
     assert.throws(() => service.update({ downloadPath: 'relative/downloads' }), assertAppError('PATH_NOT_ALLOWED'));
@@ -91,6 +96,11 @@ test('rejects unsafe or invalid application settings', () => {
       () => service.update({ namingTemplate: '{course}/{date}.mp4' }),
       assertAppError('INVALID_PARAM'),
     );
+    assert.throws(() => service.update({ proxyUrl: 'ftp://127.0.0.1:21' }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ proxyUrl: 'http://user:secret@127.0.0.1:7890' }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ proxyUrl: 'http://127.0.0.1:7890/path' }), assertAppError('INVALID_PARAM'));
+    assert.equal(service.update({ proxyUrl: '  socks5h://127.0.0.1:1080  ' }).proxyUrl, 'socks5h://127.0.0.1:1080');
+    assert.equal(service.update({ proxyUrl: '   ' }).proxyUrl, '');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -113,6 +123,7 @@ test('falls back to the default directory when a persisted path is unavailable',
         maxConcurrent: 2,
         maxRetries: 2,
         namingTemplate: '{title}.{ext}',
+        proxyUrl: '',
       },
       db,
     ).getStatus();

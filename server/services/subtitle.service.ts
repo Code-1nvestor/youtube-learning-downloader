@@ -29,6 +29,7 @@ import {
   type RunProcessOptions,
 } from '../core/process.ts';
 import { AppError } from '../types/errors.ts';
+import { getYtDlpNetworkArgs } from '../core/yt-dlp-network.ts';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -42,6 +43,7 @@ export interface SubtitleServiceOptions {
   /** 字幕输出只能落在该目录内。 */
   outputRoot: string;
   getCookieArg?: () => CookieArg | undefined;
+  getProxyUrl?: () => string | undefined;
   runProcess?: ProcessRunner;
 }
 
@@ -56,6 +58,7 @@ export class SubtitleService {
   private readonly ffmpegBinary?: string;
   private outputRoot: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
+  private readonly getProxyUrl?: () => string | undefined;
   private readonly ytDlpService: YtDlpService;
   private readonly processRunner: ProcessRunner;
 
@@ -65,6 +68,7 @@ export class SubtitleService {
     this.ffmpegBinary = options.ffmpegBinary;
     this.outputRoot = path.resolve(options.outputRoot);
     this.getCookieArg = options.getCookieArg;
+    this.getProxyUrl = options.getProxyUrl;
     this.processRunner = options.runProcess ?? runProcess;
   }
 
@@ -212,8 +216,7 @@ export class SubtitleService {
         args.push('--ffmpeg-location', this.ffmpegBinary);
       }
 
-      const cookieArg = this.getCookieArg?.();
-      if (cookieArg) args.push(cookieArg.flag, cookieArg.value);
+      args.push(...getYtDlpNetworkArgs(this.getProxyUrl, this.getCookieArg));
       args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
       const result = await this.processRunner(this.binary, args, {

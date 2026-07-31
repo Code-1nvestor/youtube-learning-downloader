@@ -8,7 +8,7 @@ import type {
   UpdateAppSettingsInput,
 } from '../types/settings.ts';
 
-const SETTING_KEYS = ['downloadPath', 'maxConcurrent', 'maxRetries', 'namingTemplate'] as const;
+const SETTING_KEYS = ['downloadPath', 'maxConcurrent', 'maxRetries', 'namingTemplate', 'proxyUrl'] as const;
 const ALLOWED_TEMPLATE_TOKENS = new Set([
   'course',
   'date',
@@ -109,7 +109,8 @@ export class SettingsService {
     const maxConcurrent = this.validateMaxConcurrent(settings.maxConcurrent);
     const maxRetries = this.validateMaxRetries(settings.maxRetries);
     const namingTemplate = this.validateNamingTemplate(settings.namingTemplate);
-    return { downloadPath, maxConcurrent, maxRetries, namingTemplate };
+    const proxyUrl = this.validateProxyUrl(settings.proxyUrl);
+    return { downloadPath, maxConcurrent, maxRetries, namingTemplate, proxyUrl };
   }
 
   private validateDownloadPath(value: unknown): string {
@@ -156,6 +157,37 @@ export class SettingsService {
       throw new AppError('INVALID_PARAM', '命名规则必须包含 {title} 和 {ext}');
     }
     return template;
+  }
+
+  private validateProxyUrl(value: unknown): string {
+    if (typeof value !== 'string') {
+      throw new AppError('INVALID_PARAM', '代理地址必须是文本');
+    }
+    const proxyUrl = value.trim();
+    if (proxyUrl.length === 0) return '';
+    if (proxyUrl.length > 2048) {
+      throw new AppError('INVALID_PARAM', '代理地址不能超过 2048 个字符');
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(proxyUrl);
+    } catch {
+      throw new AppError('INVALID_PARAM', '代理地址格式不正确');
+    }
+    if (!['http:', 'https:', 'socks5:', 'socks5h:'].includes(parsed.protocol)) {
+      throw new AppError('INVALID_PARAM', '代理协议仅支持 http、https、socks5 或 socks5h');
+    }
+    if (!parsed.hostname) {
+      throw new AppError('INVALID_PARAM', '代理地址必须包含主机名');
+    }
+    if (parsed.username || parsed.password) {
+      throw new AppError('INVALID_PARAM', '为避免明文泄露，代理地址不能包含账号或密码');
+    }
+    if ((parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) {
+      throw new AppError('INVALID_PARAM', '代理地址不能包含路径、查询参数或锚点');
+    }
+    return proxyUrl;
   }
 
   private ensureDownloadPath(downloadPath: string): void {

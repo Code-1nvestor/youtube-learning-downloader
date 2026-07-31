@@ -26,6 +26,7 @@ import type { SubtitleService } from './services/subtitle.service.ts';
 import type { HistoryService } from './services/history.service.ts';
 import type { SettingsService } from './services/settings.service.ts';
 import type { ToolUpdateService } from './services/tool-update.service.ts';
+import type { ConnectivityService } from './services/connectivity.service.ts';
 import type { RuntimeStatus } from './types/runtime.ts';
 import { createResolveRouter } from './routes/resolve.ts';
 import { createDownloadRouter } from './routes/download.ts';
@@ -47,6 +48,7 @@ export function createApp(
   historyService: HistoryService,
   settingsService: SettingsService,
   toolUpdateService: ToolUpdateService,
+  connectivityService: ConnectivityService,
   runtimeStatus: RuntimeStatus,
 ): Express {
   const app = express();
@@ -68,7 +70,7 @@ export function createApp(
   app.use('/api/subtitle', createSubtitleRouter(subtitleService));
   app.use('/api/history', createHistoryRouter(historyService));
   app.use('/api/settings', createSettingsRouter(settingsService, queueService, subtitleService));
-  app.use('/api/runtime', createRuntimeRouter(toolUpdateService, queueService));
+  app.use('/api/runtime', createRuntimeRouter(toolUpdateService, queueService, connectivityService));
 
   // In production the backend serves the Vite build, so the desktop app needs one local service.
   if (!config.isDev && fs.existsSync(config.webDistPath)) {

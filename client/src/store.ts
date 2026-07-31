@@ -14,7 +14,7 @@ import { create } from 'zustand';
 import type { ResolveResult, DownloadTask, CookieStatus } from './api';
 
 type View = 'home' | 'queue' | 'history' | 'settings';
-export type SettingsTarget = 'download' | 'runtime' | 'update' | 'diagnostics' | 'cookie';
+export type SettingsTarget = 'download' | 'network' | 'runtime' | 'update' | 'diagnostics' | 'cookie';
 
 export interface UserFacingError {
   code: string;

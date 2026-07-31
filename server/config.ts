@@ -29,6 +29,8 @@ export interface AppConfig {
   maxRetries: number;
   /** 默认文件命名模板 */
   namingTemplate: string;
+  /** yt-dlp 网络代理；空字符串表示直连 */
+  proxyUrl: string;
   /** SQLite 数据库文件路径 */
   dbPath: string;
   /** 是否在 API 错误响应中附带 details（开发环境开启便于调试） */
@@ -50,6 +52,7 @@ const DEFAULTS: AppConfig = {
   maxConcurrent: 2,
   maxRetries: 2,
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
+  proxyUrl: '',
   dbPath: '',
   isDev: process.env.NODE_ENV !== 'production',
   webDistPath: '',
@@ -106,6 +109,7 @@ export function loadConfig(): AppConfig {
       5,
     ),
     namingTemplate: process.env.NAMING_TEMPLATE ?? DEFAULTS.namingTemplate,
+    proxyUrl: process.env.PROXY_URL ?? DEFAULTS.proxyUrl,
     dbPath: process.env.DB_PATH ?? defaultDbPath,
     isDev: DEFAULTS.isDev,
     webDistPath: process.env.WEB_DIST_PATH ?? path.resolve(resourcePath, 'dist', 'client'),

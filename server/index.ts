@@ -22,6 +22,7 @@ import { SubtitleService } from './services/subtitle.service.ts';
 import { HistoryService } from './services/history.service.ts';
 import { SettingsService } from './services/settings.service.ts';
 import { ToolUpdateService } from './services/tool-update.service.ts';
+import { ConnectivityService } from './services/connectivity.service.ts';
 import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 import { runProcess, BinaryNotFoundError } from './core/process.ts';
@@ -65,13 +66,24 @@ async function main(): Promise<void> {
     dbContext = null;
   }
 
-  // Cookie 管理服务（先初始化，供 yt-dlp 与 download 服务注入参数）
+  // Cookie 与设置服务先初始化，后续 yt-dlp 调用可动态读取网络参数。
   const cookieService = new CookieService(config.appDataPath);
+  const settingsService = new SettingsService(
+    {
+      maxConcurrent: config.maxConcurrent,
+      maxRetries: config.maxRetries,
+      downloadPath: config.downloadPath,
+      namingTemplate: config.namingTemplate,
+      proxyUrl: config.proxyUrl,
+    },
+    dbContext,
+  );
 
   const ytDlpService = new YtDlpService({
     binary: config.ytDlpBinary,
     timeoutMs: config.resolveTimeoutMs,
     getCookieArg: () => cookieService.getArg(),
+    getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
   });
 
   // 环境自检：失败不阻断启动，让 API 层返回结构化错误引导用户
@@ -97,20 +109,12 @@ async function main(): Promise<void> {
   }
 
   // 初始化下载服务链
-  const settingsService = new SettingsService(
-    {
-      maxConcurrent: config.maxConcurrent,
-      maxRetries: config.maxRetries,
-      downloadPath: config.downloadPath,
-      namingTemplate: config.namingTemplate,
-    },
-    dbContext,
-  );
   const appSettings = settingsService.getSettings();
   const downloadService = new DownloadService({
     binary: config.ytDlpBinary,
     ffmpegBinary: config.ffmpegBinary,
     getCookieArg: () => cookieService.getArg(),
+    getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
   });
   const namingService = new NamingService();
   const dbForQueue = dbContext;
@@ -131,6 +135,7 @@ async function main(): Promise<void> {
   console.log(`[startup] 自动重试: ${appSettings.maxRetries} 次`);
   console.log(`[startup] 命名模板: ${appSettings.namingTemplate}`);
   console.log(`[startup] Cookie 状态: ${cookieService.getStatus().source}`);
+  console.log(`[startup] 网络代理: ${appSettings.proxyUrl ? '已配置' : '直连'}`);
 
   // 字幕服务（复用 ytDlpService 的解析能力 + cookie 配置）
   const subtitleService = new SubtitleService(ytDlpService, {
@@ -138,6 +143,7 @@ async function main(): Promise<void> {
     ffmpegBinary: config.ffmpegBinary,
     outputRoot: appSettings.downloadPath,
     getCookieArg: () => cookieService.getArg(),
+    getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
   });
 
   // 历史服务（Phase 5）
@@ -149,6 +155,11 @@ async function main(): Promise<void> {
     resourcePath: config.resourcePath,
     enabled: process.env.ELECTRON_RUN_AS_NODE === '1',
   });
+  const connectivityService = new ConnectivityService(
+    ytDlpService,
+    settingsService,
+    cookieService,
+  );
 
   const app = createApp(
     config,
@@ -159,6 +170,7 @@ async function main(): Promise<void> {
     historyService,
     settingsService,
     toolUpdateService,
+    connectivityService,
     { ytDlp: ytDlpStatus, ffmpeg: ffmpegStatus },
   );
 

@@ -184,12 +184,25 @@ export interface AppSettingsStatus {
   maxConcurrent: number;
   maxRetries: number;
   namingTemplate: string;
+  proxyUrl: string;
   persistent: boolean;
 }
 
 export type UpdateAppSettingsInput = Partial<
-  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'maxRetries' | 'namingTemplate'>
+  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'maxRetries' | 'namingTemplate' | 'proxyUrl'>
 >;
+
+export interface ConnectivityStatus {
+  ok: boolean;
+  code: string;
+  message: string;
+  recommendation?: string;
+  testedAt: string;
+  elapsedMs: number;
+  proxyConfigured: boolean;
+  cookieConfigured: boolean;
+  videoTitle?: string;
+}
 
 export interface CreateDownloadTaskInput {
   videoId: string;
@@ -327,6 +340,7 @@ export const api = {
   getHealth: () => request<HealthStatus>('/health'),
   getYtDlpUpdateStatus: () => request<YtDlpUpdateStatus>('/runtime/yt-dlp'),
   updateYtDlp: () => request<YtDlpUpdateStatus>('/runtime/yt-dlp/update', { method: 'POST' }),
+  testConnectivity: () => request<ConnectivityStatus>('/runtime/connectivity', { method: 'POST' }),
   getSettings: () => request<AppSettingsStatus>('/settings'),
   updateSettings: (settings: UpdateAppSettingsInput) =>
     request<AppSettingsStatus>('/settings', {

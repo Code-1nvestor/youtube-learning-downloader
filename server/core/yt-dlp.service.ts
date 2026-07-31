@@ -25,6 +25,7 @@
 import { runProcess, BinaryNotFoundError } from './process.ts';
 import { classifyQuery } from './url-classifier.ts';
 import { translateYtDlpError } from './yt-dlp-errors.ts';
+import { injectYtDlpNetworkArgs } from './yt-dlp-network.ts';
 import { AppError } from '../types/errors.ts';
 import type { CookieArg } from '../types/auth.ts';
 import type {
@@ -46,9 +47,11 @@ export interface YtDlpServiceOptions {
   timeoutMs?: number;
   /** Cookie 参数提供者（可选，运行时动态读取） */
   getCookieArg?: () => CookieArg | undefined;
+  /** 代理地址提供者（可选，运行时动态读取） */
+  getProxyUrl?: () => string | undefined;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'getCookieArg'>> = {
+const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'getCookieArg' | 'getProxyUrl'>> = {
   binary: 'yt-dlp',
   timeoutMs: 60_000,
 };
@@ -112,11 +115,13 @@ export class YtDlpService {
   private readonly binary: string;
   private readonly timeoutMs: number;
   private readonly getCookieArg?: () => CookieArg | undefined;
+  private readonly getProxyUrl?: () => string | undefined;
 
   constructor(options: YtDlpServiceOptions = {}) {
     this.binary = options.binary ?? DEFAULT_OPTIONS.binary;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs;
     this.getCookieArg = options.getCookieArg;
+    this.getProxyUrl = options.getProxyUrl;
   }
 
   /**
@@ -224,8 +229,8 @@ export class YtDlpService {
   /** 执行 yt-dlp 并统一翻译错误（所有私有方法的唯一出口） */
   private async exec(args: string[], contextMessage: string) {
     try {
-      // 注入 Cookie 参数（如已配置）
-      const finalArgs = this.injectCookieArg(args);
+      // 注入代理与 Cookie 参数（如已配置）
+      const finalArgs = injectYtDlpNetworkArgs(args, this.getProxyUrl, this.getCookieArg);
       const result = await runProcess(this.binary, finalArgs, {
         timeoutMs: this.timeoutMs,
       });
@@ -244,18 +249,6 @@ export class YtDlpService {
       }
       throw err;
     }
-  }
-
-  /** 在命令参数末尾（URL 前）注入 Cookie 参数 */
-  private injectCookieArg(args: string[]): string[] {
-    const cookieArg = this.getCookieArg?.();
-    if (!cookieArg) return args;
-    // URL 是最后一个参数，Cookie 参数需放在 URL 前
-    if (args.length === 0) {
-      return [cookieArg.flag, cookieArg.value];
-    }
-    const url = args[args.length - 1]!;
-    return [...args.slice(0, -1), cookieArg.flag, cookieArg.value, url];
   }
 
   // ——————————————————————————————————————————

@@ -34,6 +34,7 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
     binary: 'yt-dlp',
     ffmpegBinary: 'C:\\Tools\\ffmpeg.exe',
     getCookieArg: () => ({ flag: '--cookies', value: 'C:\\Data\\cookies.txt' }),
+    getProxyUrl: () => 'http://127.0.0.1:7890',
   });
 
   const args = service.buildDownloadArgs(createTask({
@@ -53,7 +54,9 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
   assert.ok(args.includes('--write-subs'));
   assert.ok(args.includes('--write-auto-subs'));
   assert.ok(args.includes('--convert-subs'));
-  assert.deepEqual(args.slice(-3), [
+  assert.deepEqual(args.slice(-5), [
+    '--proxy',
+    'http://127.0.0.1:7890',
     '--cookies',
     'C:\\Data\\cookies.txt',
     'https://www.youtube.com/watch?v=BaW_jenozKc',

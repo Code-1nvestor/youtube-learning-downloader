@@ -1,7 +1,7 @@
 export interface ErrorGuidance {
   guidance: string;
   settingsLabel?: string;
-  settingsTarget?: 'download' | 'runtime' | 'update' | 'diagnostics' | 'cookie';
+  settingsTarget?: 'download' | 'network' | 'runtime' | 'update' | 'diagnostics' | 'cookie';
 }
 
 export function getErrorGuidance(code: string): ErrorGuidance {
@@ -17,7 +17,7 @@ export function getErrorGuidance(code: string): ErrorGuidance {
   };
   if (actions[code]) return actions[code];
   if (code === 'NETWORK_ERROR' || code === 'TIMEOUT') {
-    return { guidance: '请检查网络、代理或防火墙，然后重试。' };
+    return { guidance: '请检查网络、代理或防火墙，然后重试。', settingsLabel: '检查网络与代理', settingsTarget: 'network' };
   }
   return { guidance: '请稍后重试；持续失败时可在设置页查看日志。' };
 }

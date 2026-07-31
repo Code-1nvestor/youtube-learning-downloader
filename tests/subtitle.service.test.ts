@@ -52,6 +52,7 @@ test('downloads subtitles through a temporary SRT file and cleans it afterwards'
     binary: 'fake-yt-dlp',
     ffmpegBinary: 'C:\\Tools\\ffmpeg.exe',
     outputRoot: 'C:\\Downloads',
+    getProxyUrl: () => 'socks5://127.0.0.1:1080',
     runProcess: async (_command, args) => {
       observedArgs = args;
       const outputIndex = args.indexOf('-o');
@@ -76,5 +77,10 @@ test('downloads subtitles through a temporary SRT file and cleans it afterwards'
   assert.match(result.content ?? '', /Hello/);
   assert.equal(result.cueCount, 1);
   assert.ok(observedArgs.includes('--ffmpeg-location'));
+  assert.deepEqual(observedArgs.slice(-3), [
+    '--proxy',
+    'socks5://127.0.0.1:1080',
+    'https://www.youtube.com/watch?v=YE7VzlLtp-4',
+  ]);
   assert.equal(fs.existsSync(generatedTempDir), false);
 });

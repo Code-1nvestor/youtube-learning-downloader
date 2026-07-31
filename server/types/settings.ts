@@ -4,6 +4,8 @@ export interface AppSettings {
   maxConcurrent: number;
   maxRetries: number;
   namingTemplate: string;
+  /** yt-dlp 使用的代理地址；空字符串表示直连。 */
+  proxyUrl: string;
 }
 
 export interface AppSettingsStatus extends AppSettings {

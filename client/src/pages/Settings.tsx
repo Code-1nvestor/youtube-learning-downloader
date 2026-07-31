@@ -13,6 +13,7 @@ import {
   ApiError,
   type AppSettingsStatus,
   type CookieStatus,
+  type ConnectivityStatus,
   type HealthStatus,
   type YtDlpUpdateStatus,
 } from '../api';
@@ -85,6 +86,8 @@ export function Settings() {
       <ThemeSection />
 
       <DownloadSettingsSection />
+
+      <NetworkSettingsSection />
 
       <RuntimeSection health={health} />
 
@@ -161,6 +164,138 @@ export function Settings() {
       </section>
 
     </div>
+  );
+}
+
+function NetworkSettingsSection() {
+  const { notify, openSettings } = useStore();
+  const [proxyUrl, setProxyUrl] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<ConnectivityStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getSettings()
+      .then((settings) => {
+        if (!cancelled) setProxyUrl(settings.proxyUrl);
+      })
+      .catch((error) => {
+        if (!cancelled) notify(error instanceof ApiError ? error.message : '读取网络设置失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notify]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const settings = await api.updateSettings({ proxyUrl: proxyUrl.trim() });
+      setProxyUrl(settings.proxyUrl);
+      setResult(null);
+      notify(settings.proxyUrl ? '代理设置已保存，将用于后续请求' : '已切换为直连');
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '代理设置保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      setResult(await api.testConnectivity());
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '连接测试失败');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <section id="settings-network" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">网络与连接测试</h2>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+        代理只提供给 yt-dlp；留空表示直连。保存后用于新请求，不会中断正在下载的任务。
+      </p>
+
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+        代理地址（可选）
+      </label>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          value={proxyUrl}
+          onChange={(event) => setProxyUrl(event.target.value)}
+          placeholder="例如：http://127.0.0.1:7890"
+          spellCheck={false}
+          className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+        />
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!loaded || saving || testing}
+          className="px-4 py-2 border border-primary-300 text-primary-700 dark:text-primary-300 rounded-lg text-sm hover:bg-primary-50 dark:hover:bg-primary-950/40 disabled:opacity-40"
+        >
+          {saving ? '保存中…' : '保存代理'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void testConnection()}
+          disabled={!loaded || saving || testing}
+          className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+        >
+          {testing ? '测试中…' : '测试 YouTube 连接'}
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+        支持 http、https、socks5、socks5h。出于安全考虑，不接受包含账号或密码的地址。
+      </p>
+
+      {result && (
+        <div className={`mt-4 rounded-lg border p-4 ${
+          result.ok
+            ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40'
+            : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40'
+        }`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className={`text-sm font-medium ${result.ok ? 'text-green-700 dark:text-green-300' : 'text-amber-800 dark:text-amber-300'}`}>
+              {result.ok ? '连接正常' : `连接需要处理（${result.code}）`}
+            </p>
+            <span className="text-xs text-gray-500 dark:text-gray-400">耗时 {result.elapsedMs} ms</span>
+          </div>
+          <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{result.message}</p>
+          {result.videoTitle && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">测试视频：{result.videoTitle}</p>}
+          {result.recommendation && <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">建议：{result.recommendation}</p>}
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            当前方式：{result.proxyConfigured ? '已配置代理' : '直连'} · Cookie：{result.cookieConfigured ? '已配置' : '未配置'}
+          </p>
+          {result.code === 'RATE_LIMITED' && (
+            <button
+              type="button"
+              onClick={() => openSettings('cookie')}
+              className="mt-3 px-3 py-1.5 text-xs rounded-md bg-amber-600 text-white hover:bg-amber-700"
+            >
+              去配置 Cookie
+            </button>
+          )}
+          {(result.code === 'YT_DLP_MISSING' || result.code === 'YT_DLP_OUTDATED') && (
+            <button
+              type="button"
+              onClick={() => openSettings(result.code === 'YT_DLP_OUTDATED' ? 'update' : 'runtime')}
+              className="mt-3 px-3 py-1.5 text-xs rounded-md bg-amber-600 text-white hover:bg-amber-700"
+            >
+              {result.code === 'YT_DLP_OUTDATED' ? '去更新 yt-dlp' : '检查运行环境'}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
