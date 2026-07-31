@@ -16,7 +16,7 @@ const app = express();
 const fixtureDesktopBridge = `
 <script>
 window.desktop = {
-  getAppVersion: async () => '0.12.0-fixture',
+  getAppVersion: async () => '0.13.0-fixture',
   selectDirectory: async () => null,
   openLogsDirectory: async () => ({ path: 'C:\\\\Fixture\\\\logs' }),
   openDownload: async () => ({ path: 'C:\\\\Fixture\\\\lesson.mp4' }),
@@ -36,6 +36,11 @@ let fixtureSettings = {
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
   proxyUrl: '',
   persistent: true,
+};
+
+let fixtureCookieStatus = {
+  configured: false,
+  source: 'none',
 };
 
 const fixtureVideo = {
@@ -106,7 +111,35 @@ app.get('/api/health', (_request, response) => {
 });
 
 app.get('/api/auth/cookie', (_request, response) => {
-  response.json({ success: true, data: { configured: false, source: 'none' } });
+  response.json({ success: true, data: fixtureCookieStatus });
+});
+
+app.post('/api/auth/cookie/browser', (request, response) => {
+  fixtureCookieStatus = {
+    configured: true,
+    source: 'browser',
+    browser: String(request.body?.browser ?? 'edge'),
+    updatedAt: new Date().toISOString(),
+  };
+  response.json({ success: true, data: fixtureCookieStatus });
+});
+
+app.post('/api/auth/cookie/file', (_request, response) => {
+  fixtureCookieStatus = {
+    configured: true,
+    source: 'file',
+    fileName: 'cookies.txt',
+    updatedAt: new Date().toISOString(),
+  };
+  response.json({ success: true, data: fixtureCookieStatus });
+});
+
+app.delete('/api/auth/cookie', (_request, response) => {
+  fixtureCookieStatus = {
+    configured: false,
+    source: 'none',
+  };
+  response.json({ success: true, data: fixtureCookieStatus });
 });
 
 app.get('/api/runtime/yt-dlp', (_request, response) => {
@@ -137,6 +170,22 @@ app.post('/api/runtime/yt-dlp/update', (_request, response) => {
 });
 
 app.post('/api/runtime/connectivity', (_request, response) => {
+  if (fixtureCookieStatus.configured) {
+    response.json({
+      success: true,
+      data: {
+        ok: true,
+        code: 'OK',
+        message: '连接成功，可以解析 YouTube',
+        videoTitle: fixtureVideo.title,
+        testedAt: new Date().toISOString(),
+        elapsedMs: 840,
+        proxyConfigured: Boolean(fixtureSettings.proxyUrl),
+        cookieConfigured: true,
+      },
+    });
+    return;
+  }
   response.json({
     success: true,
     data: {

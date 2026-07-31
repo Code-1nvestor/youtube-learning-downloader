@@ -5,11 +5,16 @@ import { ConnectivityService } from '../server/services/connectivity.service.ts'
 import type { CookieService } from '../server/services/cookie.service.ts';
 import type { SettingsService } from '../server/services/settings.service.ts';
 import { AppError } from '../server/types/errors.ts';
+import type { CookieStatus } from '../server/types/auth.ts';
 
-function createService(resolve: YtDlpService['resolve'], proxyUrl = '', cookieConfigured = false) {
+function createService(
+  resolve: YtDlpService['resolve'],
+  proxyUrl = '',
+  cookieStatus: CookieStatus = { configured: false, source: 'none' },
+) {
   const ytDlp = { resolve } as YtDlpService;
   const settings = { getSettings: () => ({ proxyUrl }) } as unknown as SettingsService;
-  const cookie = { getStatus: () => ({ configured: cookieConfigured }) } as unknown as CookieService;
+  const cookie = { getStatus: () => cookieStatus } as unknown as CookieService;
   return new ConnectivityService(ytDlp, settings, cookie);
 }
 
@@ -18,7 +23,7 @@ test('reports a successful YouTube parse without downloading media', async () =>
   const service = createService(async (url) => {
     received = url;
     return { kind: 'video', title: 'yt-dlp test video', videos: [] };
-  }, 'http://127.0.0.1:7890', true);
+  }, 'http://127.0.0.1:7890', { configured: true, source: 'browser', browser: 'edge' });
 
   const status = await service.testYouTube();
   assert.match(received, /youtube\.com\/watch/);
@@ -39,6 +44,28 @@ test('returns actionable RATE_LIMITED and network diagnostic results', async () 
     assert.equal(status.code, code);
     assert.ok(status.recommendation);
   }
+});
+
+test('explains how to refresh a configured Cookie that still fails verification', async () => {
+  const failingResolve = async () => {
+    throw new AppError('RATE_LIMITED', 'fixture RATE_LIMITED');
+  };
+
+  const browserStatus = await createService(failingResolve, '', {
+    configured: true,
+    source: 'browser',
+    browser: 'edge',
+  }).testYouTube();
+  assert.match(browserStatus.recommendation ?? '', /关闭.*浏览器/);
+  assert.equal(browserStatus.cookieConfigured, true);
+
+  const fileStatus = await createService(failingResolve, '', {
+    configured: true,
+    source: 'file',
+    fileName: 'cookies.txt',
+  }).testYouTube();
+  assert.match(fileStatus.recommendation ?? '', /重新登录.*导出最新 Cookie/);
+  assert.equal(fileStatus.cookieConfigured, true);
 });
 
 test('rejects overlapping connection tests', async () => {

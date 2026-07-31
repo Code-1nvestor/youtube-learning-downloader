@@ -25,6 +25,8 @@ export function Settings() {
   const { cookieStatus, setCookieStatus, notify, settingsTarget, clearSettingsTarget } = useStore();
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [testingCookie, setTestingCookie] = useState(false);
+  const [cookieConnectivity, setCookieConnectivity] = useState<ConnectivityStatus | null>(null);
 
   // 初始加载 Cookie 状态
   useEffect(() => {
@@ -58,7 +60,8 @@ export function Settings() {
     try {
       const status = await api.setCookieBrowser(browser);
       setCookieStatus(status);
-      notify('Cookie 已配置为从浏览器读取');
+      setCookieConnectivity(null);
+      notify('Cookie 已配置为从浏览器读取；建议测试当前配置');
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : '配置失败';
       notify(msg);
@@ -72,12 +75,25 @@ export function Settings() {
     try {
       const status = await api.clearCookie();
       setCookieStatus(status);
+      setCookieConnectivity(null);
       notify('Cookie 已清除');
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : '清除失败';
       notify(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const testCookieConfiguration = async () => {
+    setTestingCookie(true);
+    setCookieConnectivity(null);
+    try {
+      setCookieConnectivity(await api.testConnectivity());
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '当前配置测试失败');
+    } finally {
+      setTestingCookie(false);
     }
   };
 
@@ -139,7 +155,7 @@ export function Settings() {
               <button
                 key={b}
                 onClick={() => handleBrowserConfig(b)}
-                disabled={loading}
+                disabled={loading || testingCookie}
                 className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-40 capitalize"
               >
                 {b}
@@ -152,17 +168,72 @@ export function Settings() {
         </div>
 
         {/* 文件配置 */}
-        <FileUpload onUploaded={setCookieStatus} disabled={loading} />
+        <FileUpload
+          onUploaded={(status) => {
+            setCookieStatus(status);
+            setCookieConnectivity(null);
+          }}
+          disabled={loading || testingCookie}
+        />
 
-        {/* 清除 */}
+        {/* 验证与清除 */}
         {cookieStatus?.configured && (
-          <button
-            onClick={handleClear}
-            disabled={loading}
-            className="mt-4 px-4 py-2 border border-red-300 text-red-600 dark:text-red-400 rounded-lg text-sm hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 disabled:opacity-40"
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void testCookieConfiguration()}
+              disabled={loading || testingCookie}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+            >
+              {testingCookie ? '正在测试…' : '测试当前配置'}
+            </button>
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={loading || testingCookie}
+              className="px-4 py-2 border border-red-300 text-red-600 dark:text-red-400 rounded-lg text-sm hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 disabled:opacity-40"
+            >
+              清除 Cookie 配置
+            </button>
+          </div>
+        )}
+
+        {cookieStatus?.configured && (
+          <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+            测试只解析 YouTube 官方测试视频，不会下载媒体，也不会显示 Cookie 内容。
+          </p>
+        )}
+
+        {cookieConnectivity && (
+          <div
+            data-testid="cookie-connectivity-result"
+            className={`mt-4 rounded-lg border p-4 ${
+              cookieConnectivity.ok
+                ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40'
+                : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40'
+            }`}
           >
-            清除 Cookie 配置
-          </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className={`text-sm font-medium ${
+                cookieConnectivity.ok
+                  ? 'text-green-700 dark:text-green-300'
+                  : 'text-amber-800 dark:text-amber-300'
+              }`}>
+                {cookieConnectivity.ok
+                  ? '当前配置可连接 YouTube'
+                  : `当前配置仍需处理（${cookieConnectivity.code}）`}
+              </p>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                耗时 {cookieConnectivity.elapsedMs} ms
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{cookieConnectivity.message}</p>
+            {cookieConnectivity.recommendation && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                下一步：{cookieConnectivity.recommendation}
+              </p>
+            )}
+          </div>
         )}
       </section>
 

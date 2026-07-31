@@ -3,6 +3,7 @@ import type { CookieService } from './cookie.service.ts';
 import type { SettingsService } from './settings.service.ts';
 import { AppError, isAppError, type ErrorCode } from '../types/errors.ts';
 import type { ConnectivityStatus } from '../types/runtime.ts';
+import type { CookieStatus } from '../types/auth.ts';
 
 const OFFICIAL_TEST_VIDEO = 'https://www.youtube.com/watch?v=YE7VzlLtp-4';
 
@@ -28,8 +29,9 @@ export class ConnectivityService {
       });
     } catch (error) {
       if (!isAppError(error)) throw error;
+      const cookieStatus = this.cookieService.getStatus();
       return this.makeStatus(false, error.code, error.message, startedAt, {
-        recommendation: recommendationFor(error.code),
+        recommendation: recommendationFor(error.code, cookieStatus),
       });
     } finally {
       this.running = false;
@@ -58,9 +60,15 @@ export class ConnectivityService {
   }
 }
 
-function recommendationFor(code: ErrorCode): string {
+function recommendationFor(code: ErrorCode, cookieStatus: CookieStatus): string {
   switch (code) {
     case 'RATE_LIMITED':
+      if (cookieStatus.source === 'browser') {
+        return `已选择 ${cookieStatus.browser ?? '浏览器'} Cookie，但 YouTube 仍要求验证；请完全关闭该浏览器后重试，仍失败时可改用最新导出的 Cookie 文件。`;
+      }
+      if (cookieStatus.source === 'file') {
+        return '已导入 Cookie 文件，但 YouTube 仍要求验证；该文件可能已失效，请重新登录 YouTube 后导出最新 Cookie。';
+      }
       return '网络已到达 YouTube，但对方要求验证身份；请配置 Cookie 后重试。';
     case 'NETWORK_ERROR':
     case 'TIMEOUT':
