@@ -11,6 +11,42 @@
 import { AppError } from '../types/errors.ts';
 import { tail } from './utils.ts';
 
+/** 仅匹配 yt-dlp 明确的 Cookie 读取/格式错误，避免误判普通文件或网络错误。 */
+export function translateCookieError(stderr: string): AppError | null {
+  const text = stderr.toLowerCase();
+
+  if (/could not copy .*cookies? database/.test(text)) {
+    return new AppError(
+      'COOKIE_ERROR',
+      '无法复制浏览器 Cookie 数据库，请完全关闭所选浏览器后重试；仍失败时改用最新导出的 Cookie 文件',
+      { stderr: tail(stderr) },
+    );
+  }
+  if (text.includes('failed to decrypt with dpapi')) {
+    return new AppError(
+      'COOKIE_ERROR',
+      'Windows 无法解密浏览器 Cookie，请改用 Firefox，或导入最新的 Netscape Cookie 文件',
+      { stderr: tail(stderr) },
+    );
+  }
+  if (/could not find .*cookies database/.test(text)) {
+    return new AppError(
+      'COOKIE_ERROR',
+      '未找到所选浏览器的 Cookie 数据库，请确认浏览器已安装且登录过 YouTube，或选择其他浏览器',
+      { stderr: tail(stderr) },
+    );
+  }
+  if (text.includes('does not look like a netscape format cookies file')) {
+    return new AppError(
+      'COOKIE_ERROR',
+      'Cookie 文件不是 yt-dlp 支持的 Netscape 格式，请重新导出后再配置',
+      { stderr: tail(stderr) },
+    );
+  }
+
+  return null;
+}
+
 /**
  * 将 yt-dlp stderr 翻译为对应的 AppError。
  *
@@ -20,6 +56,8 @@ import { tail } from './utils.ts';
  */
 export function translateYtDlpError(stderr: string, context: string): AppError {
   const text = stderr.toLowerCase();
+  const cookieError = translateCookieError(stderr);
+  if (cookieError) return cookieError;
 
   if (text.includes('video unavailable') || text.includes('private video')) {
     return new AppError('VIDEO_UNAVAILABLE', '视频不可用（已删除/私有/地区限制）', {
@@ -77,28 +115,8 @@ export function translateYtDlpError(stderr: string, context: string): AppError {
  * @returns 匹配到的 AppError 实例
  */
 export function translateDownloadError(stderr: string, title: string): AppError {
-  const text = stderr.toLowerCase();
-
-  if (text.includes('sign in to confirm') || text.includes('not a bot')) {
-    return new AppError('RATE_LIMITED', 'YouTube 要求人机验证，请配置 Cookie 后重试', {
-      stderr: tail(stderr),
-    });
-  }
-  if (text.includes('video unavailable') || text.includes('private video')) {
-    return new AppError('VIDEO_UNAVAILABLE', `视频不可用: ${title}`, {
-      stderr: tail(stderr),
-    });
-  }
-  if (text.includes('http error 429') || text.includes('too many requests')) {
-    return new AppError('RATE_LIMITED', '请求频率过高，请稍后重试', {
-      stderr: tail(stderr),
-    });
-  }
-  if (text.includes('no space left')) {
-    return new AppError('DISK_FULL', '磁盘空间不足', {
-      stderr: tail(stderr),
-    });
-  }
+  const recognized = translateYtDlpError(stderr, `下载失败: ${title}`);
+  if (recognized.code !== 'UNKNOWN') return recognized;
 
   return new AppError('DOWNLOAD_FAILED', `下载失败: ${title}`, {
     stderr: tail(stderr),

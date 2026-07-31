@@ -36,6 +36,7 @@ import os from 'node:os';
 import type { CookieArg } from '../types/auth.ts';
 import type { SubtitleCue, SubtitlePreview } from '../types/subtitle.ts';
 import type { YtDlpService } from '../core/yt-dlp.service.ts';
+import { translateYtDlpError } from '../core/yt-dlp-errors.ts';
 
 export interface SubtitleServiceOptions {
   binary: string;
@@ -303,15 +304,9 @@ export class SubtitleService {
 
   private translateError(stderr: string): AppError {
     const text = stderr.toLowerCase();
-    if (text.includes('sign in to confirm') || text.includes('not a bot')) {
-      return new AppError('RATE_LIMITED', 'YouTube 要求人机验证，请配置 Cookie', { stderr });
-    }
-    if (text.includes('video unavailable')) {
-      return new AppError('VIDEO_UNAVAILABLE', '视频不可用', { stderr });
-    }
     if (text.includes('subtitles') && text.includes('not available')) {
       return new AppError('NOT_FOUND', '该视频没有指定语言的字幕', { stderr });
     }
-    return new AppError('UNKNOWN', '字幕获取失败', { stderr: stderr.slice(-300) });
+    return translateYtDlpError(stderr, '字幕获取失败');
   }
 }

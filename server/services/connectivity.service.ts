@@ -70,6 +70,14 @@ function recommendationFor(code: ErrorCode, cookieStatus: CookieStatus): string 
         return '已导入 Cookie 文件，但 YouTube 仍要求验证；该文件可能已失效，请重新登录 YouTube 后导出最新 Cookie。';
       }
       return '网络已到达 YouTube，但对方要求验证身份；请配置 Cookie 后重试。';
+    case 'COOKIE_ERROR':
+      if (cookieStatus.source === 'browser') {
+        return '请完全关闭所选浏览器后重试；仍失败时选择 Firefox，或改用最新导出的 Cookie 文件。';
+      }
+      if (cookieStatus.source === 'file') {
+        return '请重新登录 YouTube，导出 Netscape 格式的最新 Cookie 文件后重新配置。';
+      }
+      return '请在 Cookie 设置中重新选择浏览器或导入 Netscape 格式的 Cookie 文件。';
     case 'NETWORK_ERROR':
     case 'TIMEOUT':
       return '请检查本机网络、防火墙或代理地址，然后重新测试。';

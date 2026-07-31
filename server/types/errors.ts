@@ -23,6 +23,7 @@ export const ERROR_CODES = {
   VIDEO_UNAVAILABLE: 'VIDEO_UNAVAILABLE', // 视频被删除/设为私有/地区限制
   PLAYLIST_UNAVAILABLE: 'PLAYLIST_UNAVAILABLE', // 播放列表不存在或无权限
   RATE_LIMITED: 'RATE_LIMITED', // 触发 YouTube 风控（HTTP 429）
+  COOKIE_ERROR: 'COOKIE_ERROR', // Cookie 文件或浏览器 Cookie 无法读取/解密
   NETWORK_ERROR: 'NETWORK_ERROR', // 网络不可达（无代理/断网/DNS 失败）
 
   // —— 环境类（5xx，服务启动时检测）——
@@ -54,6 +55,7 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   VIDEO_UNAVAILABLE: 404,
   PLAYLIST_UNAVAILABLE: 404,
   RATE_LIMITED: 429,
+  COOKIE_ERROR: 400,
   NETWORK_ERROR: 502,
   YT_DLP_MISSING: 500,
   YT_DLP_OUTDATED: 500,

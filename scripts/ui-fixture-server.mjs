@@ -16,7 +16,7 @@ const app = express();
 const fixtureDesktopBridge = `
 <script>
 window.desktop = {
-  getAppVersion: async () => '0.14.0-fixture',
+  getAppVersion: async () => '0.15.0-fixture',
   selectDirectory: async () => null,
   openLogsDirectory: async () => ({ path: 'C:\\\\Fixture\\\\logs' }),
   saveDiagnosticReport: async () => ({ saved: true, path: 'C:\\\\Fixture\\\\学习资料下载器-诊断报告.txt' }),
@@ -324,8 +324,8 @@ app.get('/api/queue', (_request, response) => {
         estimatedBytes: 0,
         retryCount: 0,
         maxRetries: 2,
-        error: 'YouTube 要求人机验证',
-        errorCode: 'RATE_LIMITED',
+        error: '无法复制浏览器 Cookie 数据库',
+        errorCode: 'COOKIE_ERROR',
         createdAt: new Date().toISOString(),
       }, {
         id: '11111111-1111-4111-8111-111111111111',

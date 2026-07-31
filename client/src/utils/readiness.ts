@@ -4,6 +4,7 @@ import type { SettingsTarget } from '../store';
 export function connectivitySettingsTarget(code: string): SettingsTarget {
   switch (code) {
     case 'RATE_LIMITED':
+    case 'COOKIE_ERROR':
       return 'cookie';
     case 'NETWORK_ERROR':
     case 'TIMEOUT':

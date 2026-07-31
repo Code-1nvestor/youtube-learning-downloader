@@ -378,13 +378,13 @@ function NetworkSettingsSection() {
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             当前方式：{result.proxyConfigured ? '已配置代理' : '直连'} · Cookie：{result.cookieConfigured ? '已配置' : '未配置'}
           </p>
-          {result.code === 'RATE_LIMITED' && (
+          {(result.code === 'RATE_LIMITED' || result.code === 'COOKIE_ERROR') && (
             <button
               type="button"
               onClick={() => openSettings('cookie')}
               className="mt-3 px-3 py-1.5 text-xs rounded-md bg-amber-600 text-white hover:bg-amber-700"
             >
-              去配置 Cookie
+              {result.code === 'COOKIE_ERROR' ? '修复 Cookie' : '去配置 Cookie'}
             </button>
           )}
           {(result.code === 'YT_DLP_MISSING' || result.code === 'YT_DLP_OUTDATED') && (

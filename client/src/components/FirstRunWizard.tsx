@@ -62,6 +62,7 @@ export function FirstRunWizard({
     data.health.runtime.ffmpeg.available,
   );
   const requiredReady = localReady && connectivity?.ok === true;
+  const cookieNeedsAttention = connectivity?.code === 'RATE_LIMITED' || connectivity?.code === 'COOKIE_ERROR';
 
   const testConnection = async () => {
     setTestingConnection(true);
@@ -114,12 +115,14 @@ export function FirstRunWizard({
                 : '尚未测试；点击下方按钮后只做解析，不下载媒体'}
             />
             <ReadinessRow
-              ready={data.cookie.configured}
-              optional={connectivity?.code !== 'RATE_LIMITED'}
+              ready={data.cookie.configured && !cookieNeedsAttention}
+              optional={!cookieNeedsAttention}
               title="YouTube Cookie"
-              detail={data.cookie.configured
-                ? '已配置；若测试仍失败，可能需要重新导入或关闭对应浏览器'
-                : connectivity?.code === 'RATE_LIMITED'
+              detail={connectivity?.code === 'COOKIE_ERROR'
+                ? 'Cookie 已配置但无法读取；请按连接测试建议关闭浏览器、换用 Firefox 或重新导入'
+                : data.cookie.configured
+                  ? '已配置；若测试仍失败，可能需要重新导入或关闭对应浏览器'
+                  : connectivity?.code === 'RATE_LIMITED'
                   ? '当前网络必须配置 Cookie 才能通过 YouTube 验证'
                   : '暂未配置；仅在 YouTube 要求人机验证时需要'}
             />

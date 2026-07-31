@@ -68,6 +68,20 @@ test('explains how to refresh a configured Cookie that still fails verification'
   assert.equal(fileStatus.cookieConfigured, true);
 });
 
+test('keeps Cookie extraction failures actionable in connectivity diagnostics', async () => {
+  const service = createService(async () => {
+    throw new AppError('COOKIE_ERROR', '无法复制浏览器 Cookie 数据库');
+  }, '', {
+    configured: true,
+    source: 'browser',
+    browser: 'edge',
+  });
+
+  const status = await service.testYouTube();
+  assert.equal(status.code, 'COOKIE_ERROR');
+  assert.match(status.recommendation ?? '', /关闭.*浏览器|Firefox/);
+});
+
 test('rejects overlapping connection tests', async () => {
   let release!: () => void;
   const service = createService(() => new Promise((resolve) => {

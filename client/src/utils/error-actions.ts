@@ -7,6 +7,7 @@ export interface ErrorGuidance {
 export function getErrorGuidance(code: string): ErrorGuidance {
   const actions: Record<string, ErrorGuidance> = {
     RATE_LIMITED: { guidance: 'YouTube 需要确认是本人访问。配置浏览器 Cookie 后再重试。', settingsLabel: '去配置 Cookie', settingsTarget: 'cookie' },
+    COOKIE_ERROR: { guidance: '当前 Cookie 无法读取或解密，请关闭浏览器后重试，或重新导入最新 Cookie 文件。', settingsLabel: '修复 Cookie', settingsTarget: 'cookie' },
     YT_DLP_MISSING: { guidance: '下载核心不可用，请在设置页查看运行环境。', settingsLabel: '检查运行环境', settingsTarget: 'runtime' },
     YT_DLP_OUTDATED: { guidance: '下载核心版本过旧，请先更新 yt-dlp。', settingsLabel: '去更新', settingsTarget: 'update' },
     FFMPEG_MISSING: { guidance: '缺少音视频合并工具，请在设置页查看运行环境。', settingsLabel: '检查运行环境', settingsTarget: 'runtime' },
