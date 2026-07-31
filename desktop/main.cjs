@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -15,6 +15,7 @@ const {
   normalizeAppVersion,
 } = require('./release-policy.cjs');
 const { createCloseGuard, formatActiveTaskSummary } = require('./close-guard.cjs');
+const { createTaskMonitor } = require('./task-monitor.cjs');
 
 let mainWindow = null;
 let backendProcess = null;
@@ -22,6 +23,8 @@ let backendLog = null;
 let shuttingDown = false;
 let appOrigin = null;
 let downloadActions = null;
+let taskMonitor = null;
+const activeNotifications = new Set();
 
 // 固定端口可让 localStorage / Service Worker 等浏览器数据跨启动复用。
 // 端口被占用时自动退回随机端口，避免应用完全无法启动。
@@ -266,6 +269,52 @@ function createWindow(url) {
   void window.loadURL(url);
 }
 
+function updateTaskbar(progress) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setProgressBar(progress.value, { mode: progress.mode });
+}
+
+function showDesktopNotification({ title, body }) {
+  if (!Notification.isSupported()) return;
+
+  const notification = new Notification({
+    title,
+    body,
+    icon: path.join(__dirname, 'icon.ico'),
+    timeoutType: 'default',
+  });
+  const release = () => activeNotifications.delete(notification);
+  activeNotifications.add(notification);
+  notification.once('close', release);
+  notification.once('failed', (_event, error) => {
+    release();
+    console.error('[desktop] 系统通知显示失败', error);
+  });
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  notification.show();
+}
+
+function startTaskMonitor() {
+  taskMonitor?.stop();
+  taskMonitor = createTaskMonitor({
+    loadQueueStatus: () => loadLocalApiData('/api/queue'),
+    updateTaskbar,
+    showNotification: showDesktopNotification,
+    shouldNotify: () => Boolean(
+      mainWindow
+      && !mainWindow.isDestroyed()
+      && !mainWindow.isFocused()
+    ),
+    onError: (error) => console.error('[desktop] 后台队列监控失败', error),
+  });
+  taskMonitor.start();
+}
+
 function registerIpcHandlers() {
   const appDataPath = app.getPath('userData');
   const diagnosticActions = createDiagnosticActions({
@@ -362,10 +411,14 @@ async function startDesktopApp() {
   await waitForHealth(`${appOrigin}/api/health`);
   await clearDesktopWebCaches(session.defaultSession, appOrigin);
   createWindow(appOrigin);
+  startTaskMonitor();
 }
 
 if (hasSingleInstanceLock) {
   app.whenReady().then(async () => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.local.youtubelearningdownloader');
+    }
     Menu.setApplicationMenu(null);
     registerIpcHandlers();
     try {
@@ -379,6 +432,9 @@ if (hasSingleInstanceLock) {
 
   app.on('before-quit', () => {
     shuttingDown = true;
+    taskMonitor?.stop();
+    taskMonitor = null;
+    activeNotifications.clear();
     stopBackend();
   });
 
