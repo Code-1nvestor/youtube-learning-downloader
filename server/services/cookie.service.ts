@@ -23,6 +23,7 @@ import type {
   CookieArg,
 } from '../types/auth.ts';
 import { AppError } from '../types/errors.ts';
+import { writeSensitiveTextFileSync } from '../core/sensitive-file.ts';
 
 export class CookieService {
   /** 服务端 Cookie 文件存储目录（相对项目根） */
@@ -89,7 +90,10 @@ export class CookieService {
     fs.mkdirSync(this.cookieDir, { recursive: true });
 
     const filePath = path.resolve(this.cookieDir, CookieService.COOKIE_FILE);
-    fs.writeFileSync(filePath, content, 'utf8');
+    const protection = writeSensitiveTextFileSync(filePath, content);
+    if (!protection.protected) {
+      console.warn('[cookie] Cookie 已保存，但当前系统未能完整应用仅当前账号可读权限');
+    }
 
     this.source = 'file';
     this.browser = undefined;

@@ -753,6 +753,9 @@ function FileUpload({
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
         方式二：粘贴 Netscape Cookie 文件内容
       </label>
+      <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+        内容只保存在本机应用数据目录，并限制为当前系统账号读取；共享电脑建议优先使用浏览器方式，用完后及时清除配置。
+      </p>
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
