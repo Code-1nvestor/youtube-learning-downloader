@@ -182,6 +182,7 @@ function createWindow(url) {
     minHeight: 640,
     show: false,
     backgroundColor: '#f9fafb',
+    icon: path.join(__dirname, 'icon.ico'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

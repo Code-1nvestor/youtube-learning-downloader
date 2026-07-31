@@ -1,6 +1,6 @@
 {
   "name": "youtube-learning-downloader",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "main": "desktop/main.cjs",
   "description": "YouTube 学习资料下载工具（个人学习用途，非商业）",
@@ -48,6 +48,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "icon.ico",
       "package.json"
     ],
     "extraResources": [
@@ -65,6 +66,7 @@
       }
     ],
     "win": {
+      "icon": "desktop/icon.ico",
       "signExecutable": false,
       "target": [
         {

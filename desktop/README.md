@@ -39,11 +39,20 @@ npm run desktop:dist
 
 成功标志：`release` 目录中生成 NSIS 安装程序和便携版。
 
+Windows 图标由仓库现有的 `client/public/icon.svg` 设计生成。需要重建图标时执行：
+
+```powershell
+python scripts/generate-icons.py
+```
+
+成功标志：生成 `desktop/icon.ico`、`client/public/icon-192.png` 和
+`client/public/icon-512.png`。生成脚本只依赖 Pillow。
+
 二进制文件不会提交到 Git。发布前必须按
 [`resources/bin/README.md`](../resources/bin/README.md) 的说明核对来源与校验值。
 发版改版本号时，需要同时更新根目录和本目录的两个 `package.json`。
 
-当前个人版配置为不做 Windows 代码签名，因此安装时可能显示“未知发布者”或
+当前个人版已配置自定义应用与安装器图标，但不做 Windows 代码签名，因此安装时可能显示“未知发布者”或
 SmartScreen 提示。正式对外分发前应配置可信代码签名证书，并移除
 `win.signExecutable: false`。
 
