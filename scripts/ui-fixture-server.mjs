@@ -16,7 +16,7 @@ const app = express();
 const fixtureDesktopBridge = `
 <script>
 window.desktop = {
-  getAppVersion: async () => '0.18.0-fixture',
+  getAppVersion: async () => '0.19.0-fixture',
   selectDirectory: async () => null,
   openLogsDirectory: async () => ({ path: 'C:\\\\Fixture\\\\logs' }),
   saveDiagnosticReport: async () => ({ saved: true, path: 'C:\\\\Fixture\\\\学习资料下载器-诊断报告.txt' }),
@@ -340,33 +340,61 @@ app.post('/api/download', (request, response) => {
   });
 });
 
+let fixtureRetryCompleted = false;
+let fixtureQueuePollCount = 0;
+let fixtureCompleteOnPoll = null;
+
+app.post('/api/fixture/queue/complete', (_request, response) => {
+  fixtureRetryCompleted = true;
+  fixtureCompleteOnPoll = null;
+  response.json({ success: true, data: { completed: true } });
+});
+
+app.post('/api/fixture/queue/complete-after-baseline', (_request, response) => {
+  fixtureRetryCompleted = false;
+  fixtureQueuePollCount = 0;
+  fixtureCompleteOnPoll = 3;
+  response.json({ success: true, data: { completeOnPoll: fixtureCompleteOnPoll } });
+});
+
 app.get('/api/queue', (_request, response) => {
+  fixtureQueuePollCount += 1;
+  if (fixtureCompleteOnPoll !== null && fixtureQueuePollCount >= fixtureCompleteOnPoll) {
+    fixtureRetryCompleted = true;
+    fixtureCompleteOnPoll = null;
+  }
+  const retryTask = {
+    id: 'fixture-retry',
+    videoId: fixtureVideo.id,
+    title: '网络中断后的自动恢复演示',
+    formatId: '137+bestaudio[ext=m4a]',
+    container: 'mp4',
+    outputPath: 'C:\\Users\\Demo\\Downloads\\retry.mp4',
+    subtitleLangs: [],
+    subtitleMode: 'none',
+    autoSubtitle: false,
+    status: fixtureRetryCompleted ? 'completed' : 'retrying',
+    progress: fixtureRetryCompleted ? 100 : 37,
+    speed: '',
+    eta: '',
+    downloadedBytes: fixtureRetryCompleted ? 52_428_800 : 19_398_656,
+    totalBytes: 52_428_800,
+    estimatedBytes: 52_428_800,
+    retryCount: 1,
+    maxRetries: 2,
+    createdAt: new Date().toISOString(),
+    ...(fixtureRetryCompleted
+      ? { completedAt: new Date().toISOString() }
+      : {
+          nextRetryAt: new Date(Date.now() + 30_000).toISOString(),
+          error: '网络连接暂时中断',
+        }),
+  };
+
   response.json({
     success: true,
     data: {
-      tasks: [{
-        id: 'fixture-retry',
-        videoId: fixtureVideo.id,
-        title: '网络中断后的自动恢复演示',
-        formatId: '137+bestaudio[ext=m4a]',
-        container: 'mp4',
-        outputPath: 'C:\\Users\\Demo\\Downloads\\retry.mp4',
-        subtitleLangs: [],
-        subtitleMode: 'none',
-        autoSubtitle: false,
-        status: 'retrying',
-        progress: 37,
-        speed: '',
-        eta: '',
-        downloadedBytes: 19_398_656,
-        totalBytes: 52_428_800,
-        estimatedBytes: 52_428_800,
-        retryCount: 1,
-        maxRetries: 2,
-        nextRetryAt: new Date(Date.now() + 30_000).toISOString(),
-        error: '网络连接暂时中断',
-        createdAt: new Date().toISOString(),
-      }, {
+      tasks: [retryTask, {
         id: 'fixture-cookie-error',
         videoId: fixtureVideo.id,
         title: '需要 Cookie 的失败任务演示',
@@ -411,8 +439,8 @@ app.get('/api/queue', (_request, response) => {
         completedAt: new Date().toISOString(),
       }],
       active: 0,
-      waiting: 1,
-      completed: 1,
+      waiting: fixtureRetryCompleted ? 0 : 1,
+      completed: fixtureRetryCompleted ? 2 : 1,
       failed: 1,
     },
   });

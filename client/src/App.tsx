@@ -16,6 +16,8 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { FirstRunWizard } from './components/FirstRunWizard';
 import { useAppVersion } from './hooks/useAppVersion';
+import { useQueueSync } from './hooks/useQueueSync';
+import { countQueueAttentionTasks } from './utils/queue-status';
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -25,7 +27,10 @@ export default function App() {
   const online = useStore((s) => s.online);
   const setOnline = useStore((s) => s.setOnline);
   const notify = useStore((s) => s.notify);
+  const tasks = useStore((s) => s.tasks);
   const appVersion = useAppVersion();
+  const queueAttentionCount = countQueueAttentionTasks(tasks);
+  useQueueSync();
   const [wizardOpen, setWizardOpen] = useState(
     () => typeof localStorage !== 'undefined' && localStorage.getItem('yld:first-run-complete:v1') !== '1',
   );
@@ -73,7 +78,17 @@ export default function App() {
             首页
           </NavButton>
           <NavButton active={view === 'queue'} onClick={() => setView('queue')}>
-            下载队列
+            <span className="inline-flex items-center gap-1.5">
+              下载队列
+              {queueAttentionCount > 0 && (
+                <span
+                  className="min-w-5 h-5 px-1 rounded-full bg-primary-600 text-white text-[11px] leading-5 text-center tabular-nums"
+                  title={`${queueAttentionCount} 个任务仍在下载、等待或暂停`}
+                >
+                  {queueAttentionCount > 99 ? '99+' : queueAttentionCount}
+                </span>
+              )}
+            </span>
           </NavButton>
           <NavButton active={view === 'history'} onClick={() => setView('history')}>
             历史

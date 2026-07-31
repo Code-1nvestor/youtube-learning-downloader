@@ -1,66 +1,17 @@
 /**
  * Queue.tsx - 下载队列页
  *
- * 功能：显示所有任务，自动轮询进度，支持暂停/恢复/取消/删除。
- *
- * 轮询策略：
- * - 页面挂载时启动，每 1.5 秒拉取一次队列状态
- * - 有活跃任务（downloading/queued/retrying）时持续轮询
- * - 全部完成/失败/取消时停止轮询
- * - 页面卸载时停止轮询
+ * 功能：显示所有任务，支持暂停/恢复/取消/删除。
+ * 队列进度由 App 根组件中的 useQueueSync 全局同步，因此离开本页后仍会持续更新。
  */
 
-import { useEffect } from 'react';
 import { api, ApiError, type DownloadTask } from '../api';
 import { useStore } from '../store';
 import { getErrorGuidance } from '../utils/error-actions';
 import { DownloadFileActions } from '../components/DownloadFileActions';
 
-const POLL_INTERVAL = 1500;
-
 export function Queue() {
   const { tasks, setTasks, notify } = useStore();
-  const hasActiveTasks = tasks.some(
-    (task) => task.status === 'downloading' || task.status === 'queued' || task.status === 'retrying',
-  );
-
-  // 轮询逻辑
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const poll = async () => {
-      let nextDelay: number | null = null;
-      try {
-        const status = await api.getQueue();
-        if (cancelled) return;
-        setTasks(status.tasks);
-
-        // 当前请求完成后再安排下一次，避免慢请求相互重叠。
-        const hasActive = status.tasks.some(
-          (t) => t.status === 'downloading' || t.status === 'queued' || t.status === 'retrying',
-        );
-        if (hasActive) nextDelay = POLL_INTERVAL;
-      } catch (e) {
-        // 轮询失败不弹通知，只在控制台记录
-        console.error('[queue] 轮询失败:', e);
-        // 临时断网时继续低频尝试，网络恢复后无需重新进入页面。
-        nextDelay = POLL_INTERVAL * 2;
-      } finally {
-        if (!cancelled && nextDelay !== null) {
-          timer = setTimeout(() => void poll(), nextDelay);
-        }
-      }
-    };
-
-    // 启动时立即拉取一次
-    void poll();
-
-    return () => {
-      cancelled = true;
-      if (timer !== null) clearTimeout(timer);
-    };
-  }, [hasActiveTasks, setTasks]);
 
   const handleAction = async (task: DownloadTask, action: 'pause' | 'resume' | 'cancel' | 'remove') => {
     try {
