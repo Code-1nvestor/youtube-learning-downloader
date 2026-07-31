@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld(
   'desktop',
   Object.freeze({
+    getAppVersion: () => ipcRenderer.invoke('desktop:get-app-version'),
     selectDirectory: () => ipcRenderer.invoke('desktop:select-directory'),
     openLogsDirectory: () => ipcRenderer.invoke('desktop:open-logs-directory'),
     openDownload: (taskId) => ipcRenderer.invoke('desktop:open-download', taskId),

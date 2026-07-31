@@ -3,6 +3,7 @@ export {};
 declare global {
   interface Window {
     desktop?: {
+      getAppVersion: () => Promise<string>;
       selectDirectory: () => Promise<string | null>;
       openLogsDirectory: () => Promise<{ path: string; error?: string }>;
       openDownload: (taskId: string) => Promise<{ path?: string; error?: string }>;

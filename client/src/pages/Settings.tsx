@@ -19,6 +19,7 @@ import {
 } from '../api';
 import { useStore } from '../store';
 import { useTheme, type ThemeMode } from '../hooks/useTheme';
+import { useAppVersion } from '../hooks/useAppVersion';
 
 export function Settings() {
   const { cookieStatus, setCookieStatus, notify, settingsTarget, clearSettingsTarget } = useStore();
@@ -95,6 +96,8 @@ export function Settings() {
 
       <DiagnosticsSection />
 
+      <AboutSection />
+
       {/* Cookie 配置 */}
       <section id="settings-cookie" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
         <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">Cookie 配置</h2>
@@ -164,6 +167,35 @@ export function Settings() {
       </section>
 
     </div>
+  );
+}
+
+function AboutSection() {
+  const appVersion = useAppVersion();
+  const desktopAvailable = Boolean(window.desktop);
+
+  return (
+    <section id="settings-about" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">关于应用</h2>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            这里显示的是当前实际运行的程序版本，可用来确认升级是否真正生效。
+          </p>
+        </div>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+          {desktopAvailable ? '桌面版' : '浏览器版'}
+        </span>
+      </div>
+      <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900 px-4 py-3">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          当前版本：{appVersion ? `v${appVersion}` : desktopAvailable ? '正在读取…' : 'Web 开发环境'}
+        </p>
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          桌面版每次启动都会刷新本应用的网页缓存，但不会清除设置、历史记录、Cookie 配置或下载文件。
+        </p>
+      </div>
+    </section>
   );
 }
 

@@ -16,6 +16,7 @@ const app = express();
 const fixtureDesktopBridge = `
 <script>
 window.desktop = {
+  getAppVersion: async () => '0.9.0-fixture',
   selectDirectory: async () => null,
   openLogsDirectory: async () => ({ path: 'C:\\\\Fixture\\\\logs' }),
   openDownload: async () => ({ path: 'C:\\\\Fixture\\\\lesson.mp4' }),

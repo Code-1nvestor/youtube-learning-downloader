@@ -1,10 +1,15 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const { createDownloadActions } = require('./download-actions.cjs');
+const {
+  clearDesktopWebCaches,
+  hasVersionConflict,
+  normalizeAppVersion,
+} = require('./release-policy.cjs');
 
 let mainWindow = null;
 let backendProcess = null;
@@ -17,16 +22,38 @@ let downloadActions = null;
 // 端口被占用时自动退回随机端口，避免应用完全无法启动。
 const PREFERRED_PORT = 47831;
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const appVersion = app.getVersion();
+const hasSingleInstanceLock = app.requestSingleInstanceLock({ version: appVersion });
 if (!hasSingleInstanceLock) {
-  app.quit();
+  app.whenReady()
+    .then(() => dialog.showMessageBox({
+      type: 'info',
+      title: '应用已经在运行',
+      message: `刚刚启动的是 v${appVersion}`,
+      detail: '现有窗口已被置于前台。请查看窗口顶部的版本号；如果版本不同，请先关闭现有窗口，再重新打开新版。',
+      buttons: ['知道了'],
+      noLink: true,
+    }))
+    .finally(() => app.quit());
 }
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, _argv, _workingDirectory, additionalData) => {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+
+  const incomingVersion = normalizeAppVersion(additionalData?.version);
+  if (hasVersionConflict(appVersion, incomingVersion)) {
+    void dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: '检测到另一个应用版本',
+      message: `当前运行 v${appVersion}，刚刚启动 v${incomingVersion}`,
+      detail: '为避免两个版本同时读写同一份任务数据，新版本没有重复启动。请关闭当前窗口，再重新打开要使用的版本。',
+      buttons: ['知道了'],
+      noLink: true,
+    });
+  }
 });
 
 function getAvailablePort(preferredPort = PREFERRED_PORT) {
@@ -208,6 +235,8 @@ function createWindow(url) {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('desktop:get-app-version', () => appVersion);
+
   ipcMain.handle('desktop:select-directory', async () => {
     const options = {
       title: '选择下载目录',
@@ -263,6 +292,7 @@ async function startDesktopApp() {
   downloadActions = createDownloadActions({ loadTask: loadHistoryTask, shell });
   startBackend(port);
   await waitForHealth(`${appOrigin}/api/health`);
+  await clearDesktopWebCaches(session.defaultSession, appOrigin);
   createWindow(appOrigin);
 }
 

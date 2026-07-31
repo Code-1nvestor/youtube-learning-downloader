@@ -15,6 +15,7 @@ import { Settings } from './pages/Settings';
 import { ThemeToggle } from './components/ThemeToggle';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { FirstRunWizard } from './components/FirstRunWizard';
+import { useAppVersion } from './hooks/useAppVersion';
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -24,6 +25,7 @@ export default function App() {
   const online = useStore((s) => s.online);
   const setOnline = useStore((s) => s.setOnline);
   const notify = useStore((s) => s.notify);
+  const appVersion = useAppVersion();
   const [wizardOpen, setWizardOpen] = useState(
     () => typeof localStorage !== 'undefined' && localStorage.getItem('yld:first-run-complete:v1') !== '1',
   );
@@ -51,9 +53,21 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* 导航栏 */}
       <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center gap-6 sticky top-0 z-30">
-        <span className="text-lg font-medium text-gray-800 dark:text-gray-100">
-          学习资料下载器
-        </span>
+        <div className="flex items-baseline gap-2 shrink-0">
+          <span className="text-lg font-medium text-gray-800 dark:text-gray-100">
+            学习资料下载器
+          </span>
+          {appVersion && (
+            <button
+              type="button"
+              onClick={() => openSettings('about')}
+              title="查看当前运行版本"
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
+            >
+              v{appVersion}
+            </button>
+          )}
+        </div>
         <div className="flex gap-1 flex-1">
           <NavButton active={view === 'home'} onClick={() => setView('home')}>
             首页

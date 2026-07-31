@@ -38,22 +38,13 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // 预缓存应用 shell
+        // 预缓存应用 shell；新版安装后立即接管，并删除过期版本缓存。
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
-        // 运行时缓存：API 请求采用 NetworkFirst（优先网络，离线回退缓存）
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\/(health|queue|history)/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 5, // 5 分钟
-              },
-            },
-          },
-        ],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        // 队列、历史等用户数据始终从本机后端读取，不写入 PWA 缓存。
+        navigateFallbackDenylist: [/^\/api\//],
       },
       devOptions: {
         // 开发环境也启用 SW，便于调试
