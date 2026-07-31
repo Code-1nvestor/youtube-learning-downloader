@@ -10,7 +10,7 @@
  * - 页面卸载时停止轮询
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { api, ApiError, type DownloadTask } from '../api';
 import { useStore } from '../store';
 import { getErrorGuidance } from '../utils/error-actions';
@@ -19,50 +19,48 @@ import { DownloadFileActions } from '../components/DownloadFileActions';
 const POLL_INTERVAL = 1500;
 
 export function Queue() {
-  const { tasks, setTasks, polling, setPolling, notify } = useStore();
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { tasks, setTasks, notify } = useStore();
+  const hasActiveTasks = tasks.some(
+    (task) => task.status === 'downloading' || task.status === 'queued' || task.status === 'retrying',
+  );
 
   // 轮询逻辑
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const poll = async () => {
+      let nextDelay: number | null = null;
       try {
         const status = await api.getQueue();
         if (cancelled) return;
         setTasks(status.tasks);
 
-        // 有活跃任务时继续轮询，否则停止
+        // 当前请求完成后再安排下一次，避免慢请求相互重叠。
         const hasActive = status.tasks.some(
           (t) => t.status === 'downloading' || t.status === 'queued' || t.status === 'retrying',
         );
-        if (!hasActive && polling) {
-          setPolling(false);
-        } else if (hasActive && !polling) {
-          setPolling(true);
-        }
+        if (hasActive) nextDelay = POLL_INTERVAL;
       } catch (e) {
         // 轮询失败不弹通知，只在控制台记录
         console.error('[queue] 轮询失败:', e);
+        // 临时断网时继续低频尝试，网络恢复后无需重新进入页面。
+        nextDelay = POLL_INTERVAL * 2;
+      } finally {
+        if (!cancelled && nextDelay !== null) {
+          timer = setTimeout(() => void poll(), nextDelay);
+        }
       }
     };
 
     // 启动时立即拉取一次
-    poll();
-
-    // 有活跃任务时启动定时器
-    if (polling) {
-      timerRef.current = setInterval(poll, POLL_INTERVAL);
-    }
+    void poll();
 
     return () => {
       cancelled = true;
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timer !== null) clearTimeout(timer);
     };
-  }, [polling, setTasks, setPolling]);
+  }, [hasActiveTasks, setTasks]);
 
   const handleAction = async (task: DownloadTask, action: 'pause' | 'resume' | 'cancel' | 'remove') => {
     try {

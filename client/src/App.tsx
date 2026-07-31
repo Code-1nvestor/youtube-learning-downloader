@@ -19,8 +19,8 @@ import { FirstRunWizard } from './components/FirstRunWizard';
 export default function App() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const openSettings = useStore((s) => s.openSettings);
   const notice = useStore((s) => s.notice);
-  const error = useStore((s) => s.error);
   const online = useStore((s) => s.online);
   const setOnline = useStore((s) => s.setOnline);
   const notify = useStore((s) => s.notify);
@@ -93,13 +93,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 全局通知（错误） */}
-      {error && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm max-w-md">
-          {error.message}
-        </div>
-      )}
-
       {/* 内容区 */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-6">
         {view === 'home' && <Home />}
@@ -113,9 +106,9 @@ export default function App() {
       <FirstRunWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
-        onGoSettings={() => {
+        onGoSettings={(target) => {
           setWizardOpen(false);
-          setView('settings');
+          openSettings(target);
         }}
       />
     </div>

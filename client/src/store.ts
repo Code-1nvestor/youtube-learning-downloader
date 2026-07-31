@@ -40,8 +40,6 @@ interface AppState {
   // -- 队列 --
   tasks: DownloadTask[];
   setTasks: (t: DownloadTask[]) => void;
-  polling: boolean;
-  setPolling: (b: boolean) => void;
 
   // -- Cookie --
   cookieStatus: CookieStatus | null;
@@ -55,6 +53,15 @@ interface AppState {
   notice: string | null;
   notify: (msg: string) => void;
   clearNotice: () => void;
+}
+
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelNoticeTimer(): void {
+  if (noticeTimer !== null) {
+    clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -76,8 +83,6 @@ export const useStore = create<AppState>((set) => ({
   // 队列
   tasks: [],
   setTasks: (t) => set({ tasks: t }),
-  polling: false,
-  setPolling: (b) => set({ polling: b }),
 
   // Cookie
   cookieStatus: null,
@@ -90,9 +95,15 @@ export const useStore = create<AppState>((set) => ({
   // 通知
   notice: null,
   notify: (msg) => {
+    cancelNoticeTimer();
     set({ notice: msg });
-    // 3 秒后自动清除
-    setTimeout(() => set({ notice: null }), 3000);
+    noticeTimer = setTimeout(() => {
+      noticeTimer = null;
+      set({ notice: null });
+    }, 3000);
   },
-  clearNotice: () => set({ notice: null }),
+  clearNotice: () => {
+    cancelNoticeTimer();
+    set({ notice: null });
+  },
 }));
