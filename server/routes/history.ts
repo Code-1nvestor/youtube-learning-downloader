@@ -57,8 +57,10 @@ export function createHistoryRouter(historyService: HistoryService, queueService
 
   // -- 清空所有历史（必须在 /:id 之前注册，否则会被 :id 匹配）--
   router.delete('/', (_req, res) => {
+    const total = historyService.getHistory(1, 1).total;
+    queueService.forgetTerminalTasks();
     const deleted = historyService.clearHistory();
-    res.json(ok({ deleted }));
+    res.json(ok({ deleted: Math.max(total, deleted) }));
   });
 
   // -- 删除单条历史 --
@@ -67,7 +69,12 @@ export function createHistoryRouter(historyService: HistoryService, queueService
     if (!id) {
       throw new AppError('MISSING_PARAM', '缺少历史记录 ID');
     }
-    historyService.deleteHistory(id);
+    const queueTask = queueService.getTask(id);
+    if (queueTask && ['completed', 'failed', 'cancelled'].includes(queueTask.status)) {
+      queueService.remove(id);
+    } else {
+      historyService.deleteHistory(id);
+    }
     res.json(ok({ deleted: true, id }));
   });
 

@@ -78,6 +78,14 @@ test('pause and cancel never exceed the configured concurrency', async () => {
     queue.pause(first);
     await waitUntil(() => controlled.started.includes(second));
     queue.cancel(second);
+    assert.throws(
+      () => queue.remove(second),
+      (error: unknown) => error instanceof AppError && /仍在停止/.test(error.message),
+    );
+    assert.throws(
+      () => queue.forgetTerminalTasks(),
+      (error: unknown) => error instanceof AppError && /仍在停止/.test(error.message),
+    );
     await waitUntil(() => controlled.started.includes(third));
 
     assert.equal(controlled.maxActive, 1);
@@ -88,6 +96,10 @@ test('pause and cancel never exceed the configured concurrency', async () => {
     await waitUntil(() => controlled.active === 0 && controlled.discarded.includes(third));
     assert.deepEqual(new Set(controlled.discarded), new Set([second, third]));
     assert.equal(controlled.discarded.includes(first), false);
+    assert.doesNotThrow(() => queue.remove(third));
+    assert.equal(queue.getTask(third), undefined);
+    assert.equal(queue.forgetTerminalTasks(), 1);
+    assert.equal(queue.getTask(second), undefined);
   } finally {
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }

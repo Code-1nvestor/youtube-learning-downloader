@@ -378,7 +378,6 @@ export class QueueService {
     const controller = this.controllers.get(id);
     if (controller) {
       controller.abort();
-      this.controllers.delete(id);
     }
     this.clearRetryTimer(id);
 
@@ -400,6 +399,9 @@ export class QueueService {
     }
     if (task.status !== 'paused' && task.status !== 'failed') {
       throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可恢复`);
+    }
+    if (this.controllers.has(id)) {
+      throw new AppError('INVALID_PARAM', '任务进程仍在暂停中，请稍后再恢复');
     }
 
     task.status = 'queued';
@@ -434,12 +436,14 @@ export class QueueService {
     if (!task) {
       throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
+    if (!['downloading', 'queued', 'retrying', 'paused'].includes(task.status)) {
+      throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可取消`);
+    }
 
     // 终止子进程
     const controller = this.controllers.get(id);
     if (controller) {
       controller.abort();
-      this.controllers.delete(id);
     }
     this.clearRetryTimer(id);
 
@@ -464,11 +468,32 @@ export class QueueService {
     if (task.status === 'downloading') {
       throw new AppError('INVALID_PARAM', '下载中的任务不可直接移除，请先取消');
     }
+    if (this.controllers.has(id)) {
+      throw new AppError('INVALID_PARAM', '任务进程仍在停止，请稍后再移除');
+    }
 
     this.clearRetryTimer(id);
     this.downloadService.cleanupTaskTempArtifacts?.(task);
     this.tasks.delete(id);
     this.deleteTaskFromDb(id);
+  }
+
+  /** 清空历史时同步移除内存中的终态任务，防止界面出现幽灵记录。 */
+  forgetTerminalTasks(): number {
+    const terminalTasks = this.getAllTasks().filter(
+      (task) => task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled',
+    );
+    const stoppingTask = terminalTasks.find((task) => this.controllers.has(task.id));
+    if (stoppingTask) {
+      throw new AppError('INVALID_PARAM', `任务“${stoppingTask.title}”仍在停止，请稍后再清空历史`);
+    }
+
+    for (const task of terminalTasks) {
+      this.clearRetryTimer(task.id);
+      this.downloadService.cleanupTaskTempArtifacts?.(task);
+      this.tasks.delete(task.id);
+    }
+    return terminalTasks.length;
   }
 
   // ------------------------------------------

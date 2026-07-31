@@ -287,6 +287,14 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
       new Set(['completed', 'cancelled', 'failed']),
     );
 
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await apiRequest(harness.baseUrl, `/api/history/${cancelledId}`, { method: 'DELETE' });
+    const queueAfterHistoryDelete = await apiRequest<{ tasks: DownloadTask[] }>(
+      harness.baseUrl,
+      '/api/queue',
+    );
+    assert.equal(queueAfterHistoryDelete.tasks.some((task) => task.id === cancelledId), false);
+
     await harness.close();
     harness = undefined;
     harness = await createHarness(tempDir, databasePath);
@@ -294,10 +302,10 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
       harness.baseUrl,
       '/api/history?page=1&pageSize=20',
     );
-    assert.equal(restartedHistory.total, 3);
+    assert.equal(restartedHistory.total, 2);
     assert.deepEqual(
       new Set(restartedHistory.tasks.map((task) => task.id)),
-      new Set([completedId, cancelledId, failedId]),
+      new Set([completedId, failedId]),
     );
 
     const retriedQueue = await apiRequest<{ tasks: DownloadTask[] }>(
@@ -309,6 +317,15 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     const retriedTask = await waitForTask(harness.baseUrl, failedId, 'completed');
     assert.equal(retriedTask.retryCount, 0);
     await access(failedOutputPath);
+
+    const cleared = await apiRequest<{ deleted: number }>(
+      harness.baseUrl,
+      '/api/history',
+      { method: 'DELETE' },
+    );
+    assert.equal(cleared.deleted, 2);
+    const queueAfterClear = await apiRequest<{ tasks: DownloadTask[] }>(harness.baseUrl, '/api/queue');
+    assert.equal(queueAfterClear.tasks.length, 0);
   } finally {
     await harness?.close();
     await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
