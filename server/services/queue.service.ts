@@ -371,7 +371,7 @@ export class QueueService {
       throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (task.status !== 'downloading' && task.status !== 'queued' && task.status !== 'retrying') {
-      throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可暂停`);
+      throw new AppError('INVALID_STATE', `任务当前状态(${task.status})不可暂停`);
     }
 
     // 如果正在下载，终止子进程
@@ -398,10 +398,10 @@ export class QueueService {
       throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (task.status !== 'paused' && task.status !== 'failed') {
-      throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可恢复`);
+      throw new AppError('INVALID_STATE', `任务当前状态(${task.status})不可恢复`);
     }
     if (this.controllers.has(id)) {
-      throw new AppError('INVALID_PARAM', '任务进程仍在暂停中，请稍后再恢复');
+      throw new AppError('INVALID_STATE', '任务进程仍在暂停中，请稍后再恢复');
     }
 
     task.status = 'queued';
@@ -418,12 +418,12 @@ export class QueueService {
   /** 从持久化历史恢复一个失败任务，重启应用后仍可一键重试。 */
   retryFailedTask(task: DownloadTask): QueueStatus {
     if (task.status !== 'failed') {
-      throw new AppError('INVALID_PARAM', '只有失败任务可以重新下载');
+      throw new AppError('INVALID_STATE', '只有失败任务可以重新下载');
     }
 
     const current = this.tasks.get(task.id) ?? { ...task };
     if (current.status !== 'failed') {
-      throw new AppError('INVALID_PARAM', `任务当前状态(${current.status})不可重新下载`);
+      throw new AppError('INVALID_STATE', `任务当前状态(${current.status})不可重新下载`);
     }
     this.tasks.set(current.id, current);
     this.resume(current.id);
@@ -437,7 +437,7 @@ export class QueueService {
       throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (!['downloading', 'queued', 'retrying', 'paused'].includes(task.status)) {
-      throw new AppError('INVALID_PARAM', `任务当前状态(${task.status})不可取消`);
+      throw new AppError('INVALID_STATE', `任务当前状态(${task.status})不可取消`);
     }
 
     // 终止子进程
@@ -466,10 +466,10 @@ export class QueueService {
       throw new AppError('NOT_FOUND', `任务不存在: ${id}`);
     }
     if (task.status === 'downloading') {
-      throw new AppError('INVALID_PARAM', '下载中的任务不可直接移除，请先取消');
+      throw new AppError('INVALID_STATE', '下载中的任务不可直接移除，请先取消');
     }
     if (this.controllers.has(id)) {
-      throw new AppError('INVALID_PARAM', '任务进程仍在停止，请稍后再移除');
+      throw new AppError('INVALID_STATE', '任务进程仍在停止，请稍后再移除');
     }
 
     this.clearRetryTimer(id);
@@ -485,7 +485,7 @@ export class QueueService {
     );
     const stoppingTask = terminalTasks.find((task) => this.controllers.has(task.id));
     if (stoppingTask) {
-      throw new AppError('INVALID_PARAM', `任务“${stoppingTask.title}”仍在停止，请稍后再清空历史`);
+      throw new AppError('INVALID_STATE', `任务“${stoppingTask.title}”仍在停止，请稍后再清空历史`);
     }
 
     for (const task of terminalTasks) {

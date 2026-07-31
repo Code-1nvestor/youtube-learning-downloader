@@ -39,6 +39,7 @@ interface Harness {
   baseUrl: string;
   close: () => Promise<void>;
   db: DbContext;
+  queue: QueueService;
 }
 
 async function createHarness(tempDir: string, databasePath: string): Promise<Harness> {
@@ -132,6 +133,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     db,
+    queue,
     close: async () => {
       server.close();
       await once(server, 'close');
@@ -327,6 +329,59 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     const queueAfterClear = await apiRequest<{ tasks: DownloadTask[] }>(harness.baseUrl, '/api/queue');
     assert.equal(queueAfterClear.tasks.length, 0);
   } finally {
+    await harness?.close();
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('HTTP history deletion cannot remove an active task or its persisted state', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yld-app-history-guard-'));
+  const databasePath = path.join(tempDir, 'app.db');
+  let harness: Harness | undefined;
+
+  try {
+    harness = await createHarness(tempDir, databasePath);
+    const created = await apiRequest<{ taskIds: string[] }>(harness.baseUrl, '/api/download', {
+      method: 'POST',
+      body: JSON.stringify({
+        tasks: Array.from({ length: 10 }, (_, index) => ({
+          videoId: 'YE7VzlLtp-4',
+          title: `active history guard ${index + 1}`,
+          container: 'mp4',
+        })),
+      }),
+    });
+    const protectedId = created.taskIds.at(-1);
+    assert.ok(protectedId);
+
+    await apiRequest(harness.baseUrl, `/api/queue/${protectedId}/pause`, { method: 'POST' });
+    const paused = await waitForTask(harness.baseUrl, protectedId, 'paused');
+    assert.equal(paused.status, 'paused');
+
+    const response = await fetch(`${harness.baseUrl}/api/history/${protectedId}`, {
+      method: 'DELETE',
+    });
+    const payload = await response.json() as {
+      success: boolean;
+      error?: { code: string; message: string };
+    };
+    assert.equal(response.status, 409);
+    assert.equal(payload.success, false);
+    assert.equal(payload.error?.code, 'INVALID_STATE');
+
+    const queue = await apiRequest<{ tasks: DownloadTask[] }>(harness.baseUrl, '/api/queue');
+    assert.equal(queue.tasks.find((task) => task.id === protectedId)?.status, 'paused');
+    assert.ok(harness.db.stmts.getTaskById.get(protectedId));
+  } finally {
+    if (harness) {
+      for (const task of harness.queue.getAllTasks()) {
+        if (['downloading', 'queued', 'retrying', 'paused'].includes(task.status)) {
+          harness.queue.cancel(task.id);
+        }
+      }
+      // 等待 AbortSignal 传到测试下载器并完成 QueueService 的 finally 清理。
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
     await harness?.close();
     await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }

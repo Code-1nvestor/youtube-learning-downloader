@@ -17,6 +17,7 @@ export const ERROR_CODES = {
   INVALID_URL: 'INVALID_URL', // URL 无法识别为视频/播放列表/频道
   MISSING_PARAM: 'MISSING_PARAM', // 缺少必需参数
   INVALID_PARAM: 'INVALID_PARAM', // 参数存在但格式非法（如 videoId 不符合正则）
+  INVALID_STATE: 'INVALID_STATE', // 资源存在，但当前状态不允许执行该操作
   NOT_FOUND: 'NOT_FOUND', // 请求的资源不存在（任务/路由未找到）
 
   // —— YouTube 上游类（4xx/5xx）——
@@ -51,6 +52,7 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   INVALID_URL: 400,
   MISSING_PARAM: 400,
   INVALID_PARAM: 400,
+  INVALID_STATE: 409,
   NOT_FOUND: 404,
   VIDEO_UNAVAILABLE: 404,
   PLAYLIST_UNAVAILABLE: 404,

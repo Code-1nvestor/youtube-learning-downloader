@@ -76,15 +76,19 @@ test('pause and cancel never exceed the configured concurrency', async () => {
 
     await waitUntil(() => controlled.started.includes(first));
     queue.pause(first);
+    assert.throws(
+      () => queue.pause(first),
+      (error: unknown) => error instanceof AppError && error.code === 'INVALID_STATE',
+    );
     await waitUntil(() => controlled.started.includes(second));
     queue.cancel(second);
     assert.throws(
       () => queue.remove(second),
-      (error: unknown) => error instanceof AppError && /仍在停止/.test(error.message),
+      (error: unknown) => error instanceof AppError && error.code === 'INVALID_STATE' && /仍在停止/.test(error.message),
     );
     assert.throws(
       () => queue.forgetTerminalTasks(),
-      (error: unknown) => error instanceof AppError && /仍在停止/.test(error.message),
+      (error: unknown) => error instanceof AppError && error.code === 'INVALID_STATE' && /仍在停止/.test(error.message),
     );
     await waitUntil(() => controlled.started.includes(third));
 

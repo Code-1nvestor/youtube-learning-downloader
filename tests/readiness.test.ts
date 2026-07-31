@@ -18,3 +18,9 @@ test('routes Cookie extraction failures to an actionable Cookie repair step', ()
   assert.equal(guidance.settingsTarget, 'cookie');
   assert.match(guidance.guidance, /关闭浏览器|重新导入/);
 });
+
+test('explains task state conflicts without sending users to unrelated settings', () => {
+  const guidance = getErrorGuidance('INVALID_STATE');
+  assert.match(guidance.guidance, /刷新队列/);
+  assert.equal(guidance.settingsTarget, undefined);
+});

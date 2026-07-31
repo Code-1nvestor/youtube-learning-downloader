@@ -70,11 +70,22 @@ export function createHistoryRouter(historyService: HistoryService, queueService
       throw new AppError('MISSING_PARAM', '缺少历史记录 ID');
     }
     const queueTask = queueService.getTask(id);
-    if (queueTask && ['completed', 'failed', 'cancelled'].includes(queueTask.status)) {
+    if (queueTask) {
+      if (!['completed', 'failed', 'cancelled'].includes(queueTask.status)) {
+        throw new AppError(
+          'INVALID_STATE',
+          `任务当前状态(${queueTask.status})不属于历史记录，不能删除`,
+        );
+      }
       queueService.remove(id);
-    } else {
-      historyService.deleteHistory(id);
+      res.json(ok({ deleted: true, id }));
+      return;
     }
+
+    if (!historyService.getHistoryItem(id)) {
+      throw new AppError('NOT_FOUND', `历史记录不存在: ${id}`);
+    }
+    historyService.deleteHistory(id);
     res.json(ok({ deleted: true, id }));
   });
 
