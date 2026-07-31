@@ -12,6 +12,7 @@ import { initDatabase, type DbContext } from '../server/db/database.ts';
 import { taskToRow } from '../server/db/task-serializer.ts';
 import { CookieService } from '../server/services/cookie.service.ts';
 import { ConnectivityService } from '../server/services/connectivity.service.ts';
+import { BackupService } from '../server/services/backup.service.ts';
 import type { DownloadService } from '../server/services/download.service.ts';
 import { HistoryService } from '../server/services/history.service.ts';
 import { NamingService } from '../server/services/naming.service.ts';
@@ -92,6 +93,12 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     resourcePath: tempDir,
   });
   const connectivity = new ConnectivityService(fakeYtDlp, settings, cookie);
+  const backup = new BackupService({
+    db,
+    getSettings: () => settings.getSettings(),
+    getQueueStatus: () => queue.getQueueStatus(),
+    appVersion: '0.22.0-test',
+  });
   const config: AppConfig = {
     port: 0,
     ytDlpBinary: 'fake-yt-dlp',
@@ -122,6 +129,8 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
       ytDlp: { available: true, version: 'fake' },
       ffmpeg: { available: true, version: 'fake' },
     },
+    backup,
+    'test-desktop-token',
   );
   const server = await new Promise<Server>((resolve, reject) => {
     const candidate = app.listen(0, '127.0.0.1', () => resolve(candidate));
@@ -200,6 +209,20 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     assert.equal(connectivity.ok, true);
     assert.equal(connectivity.code, 'OK');
     assert.equal(connectivity.videoTitle, fakeResolveResult.title);
+
+    const unauthorizedBackup = await fetch(`${harness.baseUrl}/api/backup`);
+    assert.equal(unauthorizedBackup.status, 403);
+    const authorizedBackup = await fetch(`${harness.baseUrl}/api/backup`, {
+      headers: { 'x-desktop-token': 'test-desktop-token' },
+    });
+    assert.equal(authorizedBackup.status, 200);
+    const authorizedBackupPayload = await authorizedBackup.json() as {
+      success: boolean;
+      data?: { format: string; cookieIncluded: boolean };
+    };
+    assert.equal(authorizedBackupPayload.success, true);
+    assert.equal(authorizedBackupPayload.data?.format, 'youtube-learning-downloader-backup');
+    assert.equal(authorizedBackupPayload.data?.cookieIncluded, false);
 
     const blocked = await fetch(`${harness.baseUrl}/api/runtime/yt-dlp/update`, {
       method: 'POST',

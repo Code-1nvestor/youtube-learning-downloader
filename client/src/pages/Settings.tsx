@@ -110,6 +110,8 @@ export function Settings() {
 
       <YtDlpUpdateSection />
 
+      <DataBackupSection />
+
       <DiagnosticsSection />
 
       <AboutSection />
@@ -620,6 +622,71 @@ function DiagnosticsSection() {
       <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
         报告默认遮蔽 Cookie、认证信息、代理凭据、URL 查询参数和本机完整路径；发送前仍建议自行浏览确认。
       </p>
+    </section>
+  );
+}
+
+function DataBackupSection() {
+  const { notify } = useStore();
+  const [saving, setSaving] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const desktopAvailable = Boolean(window.desktop);
+
+  const saveBackup = async () => {
+    if (!window.desktop) return;
+    setSaving(true);
+    try {
+      const result = await window.desktop.saveDataBackup();
+      if (result.saved) {
+        notify(`已备份 ${result.taskCount ?? 0} 条任务记录：${result.path ?? '所选位置'}`);
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '数据备份失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restoreBackup = async () => {
+    if (!window.desktop) return;
+    setRestoring(true);
+    try {
+      const result = await window.desktop.restoreDataBackup();
+      if (!result.restored) setRestoring(false);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '数据恢复失败，当前数据未改变');
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <section id="settings-backup" className="scroll-mt-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+      <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">本地数据备份</h2>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+        备份任务、历史和普通设置，便于重装或误删后恢复。所有操作都只读写你主动选择的本地文件。
+      </p>
+      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+        <p>备份会包含视频标题、下载路径和代理地址，但不包含 Cookie 内容，也不复制已经下载的媒体文件。</p>
+        <p className="mt-1">恢复会替换当前任务、历史和普通设置；确认后应用自动重启，原运行任务会安全转为暂停。</p>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void saveBackup()}
+          disabled={!desktopAvailable || saving || restoring}
+          className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+        >
+          {saving ? '正在生成备份…' : desktopAvailable ? '导出数据备份…' : '仅桌面版可用'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void restoreBackup()}
+          disabled={!desktopAvailable || saving || restoring}
+          className="px-4 py-2 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 rounded-lg text-sm hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-40"
+        >
+          {restoring ? '正在检查备份…' : '从备份恢复…'}
+        </button>
+      </div>
     </section>
   );
 }

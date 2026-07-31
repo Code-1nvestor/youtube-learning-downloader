@@ -1,6 +1,6 @@
 {
   "name": "youtube-learning-downloader",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "private": true,
   "main": "desktop/main.cjs",
   "description": "YouTube 学习资料下载工具（个人学习用途，非商业）",
@@ -51,6 +51,8 @@
       "download-actions.cjs",
       "close-guard.cjs",
       "task-monitor.cjs",
+      "data-backup.cjs",
+      "app-restart.cjs",
       "diagnostics.cjs",
       "release-policy.cjs",
       "icon.ico",

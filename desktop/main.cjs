@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -16,6 +17,8 @@ const {
 } = require('./release-policy.cjs');
 const { createCloseGuard, formatActiveTaskSummary } = require('./close-guard.cjs');
 const { createTaskMonitor } = require('./task-monitor.cjs');
+const { createDataBackupActions } = require('./data-backup.cjs');
+const { createAppRestarter } = require('./app-restart.cjs');
 
 let mainWindow = null;
 let backendProcess = null;
@@ -31,6 +34,7 @@ const activeNotifications = new Set();
 const PREFERRED_PORT = 47831;
 
 const appVersion = app.getVersion();
+const desktopApiToken = randomBytes(32).toString('hex');
 const hasSingleInstanceLock = app.requestSingleInstanceLock({ version: appVersion });
 if (!hasSingleInstanceLock) {
   app.whenReady()
@@ -164,6 +168,8 @@ function startBackend(port) {
     APP_RESOURCE_PATH: resourceRoot,
     WEB_DIST_PATH: webDistPath,
     DOWNLOAD_PATH: downloadPath,
+    APP_VERSION: appVersion,
+    DESKTOP_API_TOKEN: desktopApiToken,
   };
 
   const child = spawn(process.execPath, [serverEntry], {
@@ -337,6 +343,52 @@ function registerIpcHandlers() {
       logFile: path.join(appDataPath, 'logs', 'backend.log'),
     },
   });
+  const restartApp = createAppRestarter({
+    app,
+    markShuttingDown: () => {
+      shuttingDown = true;
+    },
+  });
+  const dataBackupActions = createDataBackupActions({
+    loadApi: loadLocalApiData,
+    showSaveDialog: (options) => (
+      mainWindow ? dialog.showSaveDialog(mainWindow, options) : dialog.showSaveDialog(options)
+    ),
+    showOpenDialog: (options) => (
+      mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options)
+    ),
+    confirmRestore: async ({ filePath, summary }) => {
+      const options = {
+        type: 'warning',
+        title: '恢复本地数据备份',
+        message: `将用这份备份替换当前的 ${summary.taskCount} 条任务与历史记录`,
+        detail: [
+          `文件：${path.basename(filePath)}`,
+          `备份版本：${summary.appVersion}`,
+          `导出时间：${new Date(summary.exportedAt).toLocaleString('zh-CN')}`,
+          `完成 ${summary.completedCount} 条，失败 ${summary.failedCount} 条，取消 ${summary.cancelledCount} 条，暂停 ${summary.pausedCount} 条`,
+          summary.willPauseCount > 0
+            ? `为防止意外下载，另有 ${summary.willPauseCount} 条原运行任务将恢复为“已暂停”。`
+            : '备份中没有需要转为暂停的运行任务。',
+          summary.relocatedTaskCount > 0
+            ? `${summary.relocatedTaskCount} 条可重试任务的旧路径不在当前下载目录，将迁移到“已恢复任务”子目录。`
+            : '可重试任务的保存路径均在当前安全下载目录内。',
+          '',
+          '当前任务、历史和普通设置将被替换，应用随后自动重启。Cookie 和已下载媒体文件不会被导入或删除。',
+        ].join('\n'),
+        buttons: ['取消', '确认恢复并重启'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const result = mainWindow
+        ? await dialog.showMessageBox(mainWindow, options)
+        : await dialog.showMessageBox(options);
+      return result.response === 1;
+    },
+    restartApp,
+    documentsPath: app.getPath('documents'),
+  });
 
   ipcMain.handle('desktop:get-app-version', () => appVersion);
 
@@ -363,6 +415,14 @@ function registerIpcHandlers() {
     return diagnosticActions.saveReport();
   });
 
+  ipcMain.handle('desktop:save-data-backup', async () => {
+    return dataBackupActions.saveBackup();
+  });
+
+  ipcMain.handle('desktop:restore-data-backup', async () => {
+    return dataBackupActions.restoreBackup();
+  });
+
   ipcMain.handle('desktop:open-download', async (_event, taskId) => {
     if (!downloadActions) return { error: '桌面文件服务尚未就绪' };
     return downloadActions.openDownload(taskId);
@@ -381,9 +441,12 @@ function registerIpcHandlers() {
   });
 }
 
-async function loadLocalApiData(route) {
+async function loadLocalApiData(route, init = {}) {
   if (!appOrigin) throw new Error('本机服务尚未启动');
-  const response = await fetch(`${appOrigin}${route}`);
+  const headers = { ...(init.headers ?? {}) };
+  if (route.startsWith('/api/backup')) headers['x-desktop-token'] = desktopApiToken;
+  if (init.body && !headers['content-type']) headers['content-type'] = 'application/json';
+  const response = await fetch(`${appOrigin}${route}`, { ...init, headers });
   const payload = await response.json();
   if (!response.ok || !payload?.success || payload.data === undefined) {
     throw new Error(payload?.error?.message ?? `读取诊断信息失败（HTTP ${response.status}）`);

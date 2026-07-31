@@ -23,6 +23,7 @@ import { HistoryService } from './services/history.service.ts';
 import { SettingsService } from './services/settings.service.ts';
 import { ToolUpdateService } from './services/tool-update.service.ts';
 import { ConnectivityService } from './services/connectivity.service.ts';
+import { BackupService } from './services/backup.service.ts';
 import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 import { runProcess, BinaryNotFoundError } from './core/process.ts';
@@ -162,6 +163,12 @@ async function main(): Promise<void> {
     settingsService,
     cookieService,
   );
+  const backupService = new BackupService({
+    db: dbForQueue,
+    getSettings: () => settingsService.getSettings(),
+    getQueueStatus: () => queueService.getQueueStatus(),
+    appVersion: process.env.APP_VERSION ?? 'unknown',
+  });
 
   const app = createApp(
     config,
@@ -174,6 +181,8 @@ async function main(): Promise<void> {
     toolUpdateService,
     connectivityService,
     { ytDlp: ytDlpStatus, ffmpeg: ffmpegStatus },
+    backupService,
+    process.env.DESKTOP_API_TOKEN ?? '',
   );
 
   // 个人桌面应用只提供本机服务，避免局域网设备直接调用下载和 Cookie 接口。

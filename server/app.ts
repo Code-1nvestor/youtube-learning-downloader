@@ -27,6 +27,7 @@ import type { HistoryService } from './services/history.service.ts';
 import type { SettingsService } from './services/settings.service.ts';
 import type { ToolUpdateService } from './services/tool-update.service.ts';
 import type { ConnectivityService } from './services/connectivity.service.ts';
+import type { BackupService } from './services/backup.service.ts';
 import type { RuntimeStatus } from './types/runtime.ts';
 import { createResolveRouter } from './routes/resolve.ts';
 import { createDownloadRouter } from './routes/download.ts';
@@ -36,6 +37,7 @@ import { createSubtitleRouter } from './routes/subtitle.ts';
 import { createHistoryRouter } from './routes/history.ts';
 import { createSettingsRouter } from './routes/settings.ts';
 import { createRuntimeRouter } from './routes/runtime.ts';
+import { createBackupRouter } from './routes/backup.ts';
 import { AppError, isAppError } from './types/errors.ts';
 import { ok, fail } from './types/result.ts';
 
@@ -50,12 +52,16 @@ export function createApp(
   toolUpdateService: ToolUpdateService,
   connectivityService: ConnectivityService,
   runtimeStatus: RuntimeStatus,
+  backupService: BackupService,
+  desktopApiToken: string,
 ): Express {
   const app = express();
 
-  // 上调到 2mb：Cookie 文件可能较大
-  app.use(express.json({ limit: '2mb' }));
   app.use(rejectRemoteBrowserOrigins);
+  // 备份可能包含较多历史记录，仅此受桌面随机令牌保护的路由允许较大请求体。
+  app.use('/api/backup', express.json({ limit: '20mb' }), createBackupRouter(backupService, desktopApiToken));
+  // Cookie 文件可能较大，其余业务接口保持更小的请求上限。
+  app.use(express.json({ limit: '2mb' }));
 
   // -- 健康检查（前端联调与部署探活使用）--
   app.get('/api/health', (_req, res) => {
