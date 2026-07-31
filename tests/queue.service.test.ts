@@ -15,6 +15,16 @@ class ControlledDownloadService {
   active = 0;
   maxActive = 0;
   readonly started: string[] = [];
+  readonly discarded: string[] = [];
+  readonly cleaned: string[] = [];
+
+  discardTaskArtifacts(task: DownloadTask): void {
+    this.discarded.push(task.id);
+  }
+
+  cleanupTaskTempArtifacts(task: DownloadTask): void {
+    this.cleaned.push(task.id);
+  }
 
   async download(task: DownloadTask, signal: AbortSignal): Promise<void> {
     this.active++;
@@ -75,7 +85,9 @@ test('pause and cancel never exceed the configured concurrency', async () => {
     assert.equal(queue.getTask(second)?.status, 'cancelled');
 
     queue.cancel(third);
-    await waitUntil(() => controlled.active === 0);
+    await waitUntil(() => controlled.active === 0 && controlled.discarded.includes(third));
+    assert.deepEqual(new Set(controlled.discarded), new Set([second, third]));
+    assert.equal(controlled.discarded.includes(first), false);
   } finally {
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }
@@ -166,6 +178,54 @@ test('does not automatically retry non-transient failures', async () => {
     assert.equal(unavailable.attempts, 1);
     assert.equal(queue.getTask(taskId!)?.retryCount, 0);
     assert.equal(queue.getTask(taskId!)?.errorCode, 'VIDEO_UNAVAILABLE');
+  } finally {
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test('retries a failed task restored from history after restart', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-history-retry-'));
+  const succeeding = new FlakyDownloadService(0);
+  const queue = new QueueService(
+    succeeding as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+  );
+  const failedTask: DownloadTask = {
+    id: 'history-failed-task',
+    videoId: 'history-id',
+    title: 'history retry',
+    formatId: 'best',
+    container: 'mp4',
+    outputPath: path.join(outputRoot, 'history retry.mp4'),
+    subtitleLangs: [],
+    subtitleMode: 'none',
+    autoSubtitle: false,
+    status: 'failed',
+    progress: 23,
+    speed: '',
+    eta: '',
+    downloadedBytes: 100,
+    totalBytes: 400,
+    estimatedBytes: 400,
+    retryCount: 2,
+    maxRetries: 2,
+    error: 'previous failure',
+    errorCode: 'NETWORK_ERROR',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  };
+
+  try {
+    const status = queue.retryFailedTask(failedTask);
+    assert.equal(status.tasks[0]?.status, 'downloading');
+    await waitUntil(() => queue.getTask(failedTask.id)?.status === 'completed');
+    assert.equal(queue.getTask(failedTask.id)?.retryCount, 0);
+    assert.equal(queue.getTask(failedTask.id)?.error, undefined);
   } finally {
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }

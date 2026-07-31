@@ -9,12 +9,25 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const liveEnabled = process.env.YLD_E2E_LIVE === '1';
 const keepArtifacts = process.env.YLD_E2E_KEEP === '1';
+const cookieBrowser = process.env.YLD_E2E_COOKIE_BROWSER?.trim().toLowerCase() ?? '';
 const testVideoId = 'YE7VzlLtp-4';
 const testVideoUrl = `https://www.youtube.com/watch?v=${testVideoId}`;
 
 if (!liveEnabled) {
   console.error('Live test skipped. Set YLD_E2E_LIVE=1 to allow a network request and temporary download.');
   process.exit(2);
+}
+
+if (cookieBrowser && !['chrome', 'edge', 'firefox', 'brave'].includes(cookieBrowser)) {
+  console.error('YLD_E2E_COOKIE_BROWSER only supports chrome, edge, firefox, or brave.');
+  process.exit(2);
+}
+
+class LiveApiError extends Error {
+  constructor(method, route, code, message) {
+    super(`${method} ${route} failed: ${code} ${message}`);
+    this.code = code;
+  }
 }
 
 const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yld-e2e-'));
@@ -117,7 +130,12 @@ async function apiRequest(baseUrl, route, init = {}) {
   });
   const payload = await response.json();
   if (!response.ok || !payload.success) {
-    throw new Error(`${init.method ?? 'GET'} ${route} failed: ${payload.error?.code ?? response.status} ${payload.error?.message ?? ''}`);
+    throw new LiveApiError(
+      init.method ?? 'GET',
+      route,
+      payload.error?.code ?? String(response.status),
+      payload.error?.message ?? '',
+    );
   }
   return payload.data;
 }
@@ -141,6 +159,13 @@ try {
   const baseUrl = `http://127.0.0.1:${port}`;
   serverProcess = await startServer(port);
   await waitForHealth(baseUrl);
+
+  if (cookieBrowser) {
+    await apiRequest(baseUrl, '/api/auth/cookie/browser', {
+      method: 'POST',
+      body: JSON.stringify({ browser: cookieBrowser }),
+    });
+  }
 
   const resolved = await apiRequest(baseUrl, `/api/resolve?url=${encodeURIComponent(testVideoUrl)}`);
   const resolvedVideo = resolved.videos.find((video) => video.id === testVideoId);
@@ -220,7 +245,19 @@ try {
     tempDir: keepArtifacts ? tempDir : undefined,
   }, null, 2));
 } catch (error) {
-  console.error(error instanceof Error ? error.stack : String(error));
+  if (error instanceof LiveApiError) {
+    console.error(JSON.stringify({
+      ok: false,
+      blocked: error.code === 'RATE_LIMITED',
+      code: error.code,
+      message: error.message,
+      nextStep: error.code === 'RATE_LIMITED'
+        ? '在桌面版配置 Cookie，或经用户明确许可后设置 YLD_E2E_COOKIE_BROWSER 再运行。'
+        : '查看后端日志尾部并按错误码处理。',
+    }, null, 2));
+  } else {
+    console.error(error instanceof Error ? error.stack : String(error));
+  }
   console.error('--- backend log tail ---');
   console.error(serverLogs.join('').split(/\r?\n/).slice(-80).join('\n'));
   process.exitCode = 1;

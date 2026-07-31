@@ -20,7 +20,7 @@ import { DownloadFileActions } from '../components/DownloadFileActions';
 const PAGE_SIZE = 20;
 
 export function History() {
-  const { notify } = useStore();
+  const { notify, setTasks, setView } = useStore();
   const [data, setData] = useState<HistoryPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -68,6 +68,17 @@ export function History() {
     }
   };
 
+  const handleRetry = async (task: DownloadTask) => {
+    try {
+      const queue = await api.retryHistory(task.id);
+      setTasks(queue.tasks);
+      setView('queue');
+      notify('失败任务已重新加入下载队列');
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : '重新下载失败');
+    }
+  };
+
   // 加载中
   if (loading && !data) {
     return (
@@ -109,7 +120,7 @@ export function History() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="divide-y divide-gray-50 dark:divide-gray-800">
             {data.tasks.map((task) => (
-              <HistoryItem key={task.id} task={task} onDelete={handleDelete} />
+              <HistoryItem key={task.id} task={task} onDelete={handleDelete} onRetry={handleRetry} />
             ))}
           </div>
         </div>
@@ -144,11 +155,14 @@ export function History() {
 function HistoryItem({
   task,
   onDelete,
+  onRetry,
 }: {
   task: DownloadTask;
   onDelete: (task: DownloadTask) => void;
+  onRetry: (task: DownloadTask) => void;
 }) {
   const openSettings = useStore((state) => state.openSettings);
+  const errorGuidance = task.errorCode ? getErrorGuidance(task.errorCode) : null;
   const statusColor: Record<string, string> = {
     completed: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/40',
     failed: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 dark:bg-red-950/40',
@@ -194,12 +208,17 @@ function HistoryItem({
         </div>
         {/* 错误信息 */}
         {task.status === 'failed' && task.error && (
-          <div className="mt-1 flex items-center gap-2">
-            <p className="text-xs text-red-500 dark:text-red-400 truncate" title={task.error}>{task.error}</p>
-            {task.errorCode && getErrorGuidance(task.errorCode).settingsLabel && (
-              <button type="button" onClick={() => openSettings(getErrorGuidance(task.errorCode!).settingsTarget)} className="shrink-0 text-xs text-primary-600 dark:text-primary-400 hover:underline">
-                {getErrorGuidance(task.errorCode).settingsLabel}
-              </button>
+          <div className="mt-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-red-500 dark:text-red-400 truncate" title={task.error}>{task.error}</p>
+              {errorGuidance?.settingsLabel && (
+                <button type="button" onClick={() => openSettings(errorGuidance.settingsTarget)} className="shrink-0 text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                  {errorGuidance.settingsLabel}
+                </button>
+              )}
+            </div>
+            {errorGuidance && (
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">下一步：{errorGuidance.guidance}</p>
             )}
           </div>
         )}
@@ -213,6 +232,16 @@ function HistoryItem({
 
       <div className="flex items-center gap-1 flex-shrink-0">
         {task.status === 'completed' && <DownloadFileActions taskId={task.id} />}
+        {task.status === 'failed' && (
+          <button
+            type="button"
+            onClick={() => onRetry(task)}
+            title="使用原设置重新下载"
+            className="px-2 h-7 rounded text-xs text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/30"
+          >
+            重新下载
+          </button>
+        )}
         <button
           onClick={() => onDelete(task)}
           title="删除记录"

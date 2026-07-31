@@ -391,6 +391,9 @@ export const api = {
   clearHistory: () =>
     request<{ deleted: number }>('/history', { method: 'DELETE' }),
 
+  retryHistory: (id: string) =>
+    request<QueueStatus>(`/history/${id}/retry`, { method: 'POST' }),
+
   // Cookie
   getCookieStatus: () => request<CookieStatus>('/auth/cookie'),
 

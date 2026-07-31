@@ -16,7 +16,7 @@ const app = express();
 const fixtureDesktopBridge = `
 <script>
 window.desktop = {
-  getAppVersion: async () => '0.9.0-fixture',
+  getAppVersion: async () => '0.10.0-fixture',
   selectDirectory: async () => null,
   openLogsDirectory: async () => ({ path: 'C:\\\\Fixture\\\\logs' }),
   openDownload: async () => ({ path: 'C:\\\\Fixture\\\\lesson.mp4' }),
@@ -312,6 +312,28 @@ app.get('/api/history', (_request, response) => {
     success: true,
     data: {
       tasks: [{
+        id: 'fixture-history-failed',
+        videoId: fixtureVideo.id,
+        title: '历史中的失败任务恢复演示',
+        formatId: 'best',
+        container: 'mp4',
+        outputPath: 'C:\\Users\\Demo\\Downloads\\history-failed.mp4',
+        subtitleLangs: [],
+        subtitleMode: 'none',
+        autoSubtitle: false,
+        status: 'failed',
+        progress: 0,
+        speed: '',
+        eta: '',
+        downloadedBytes: 0,
+        totalBytes: 0,
+        estimatedBytes: 0,
+        retryCount: 2,
+        maxRetries: 2,
+        error: 'YouTube 要求人机验证',
+        errorCode: 'RATE_LIMITED',
+        createdAt: new Date().toISOString(),
+      }, {
         id: '11111111-1111-4111-8111-111111111111',
         videoId: fixtureVideo.id,
         title: '已完成课程文件操作演示',
@@ -333,10 +355,43 @@ app.get('/api/history', (_request, response) => {
         createdAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
       }],
-      total: 1,
+      total: 2,
       page: 1,
       pageSize: 20,
       totalPages: 1,
+    },
+  });
+});
+
+app.post('/api/history/:id/retry', (request, response) => {
+  response.json({
+    success: true,
+    data: {
+      tasks: [{
+        id: request.params.id,
+        videoId: fixtureVideo.id,
+        title: '历史中的失败任务恢复演示',
+        formatId: 'best',
+        container: 'mp4',
+        outputPath: 'C:\\Users\\Demo\\Downloads\\history-failed.mp4',
+        subtitleLangs: [],
+        subtitleMode: 'none',
+        autoSubtitle: false,
+        status: 'queued',
+        progress: 0,
+        speed: '',
+        eta: '',
+        downloadedBytes: 0,
+        totalBytes: 0,
+        estimatedBytes: 0,
+        retryCount: 0,
+        maxRetries: 2,
+        createdAt: new Date().toISOString(),
+      }],
+      active: 0,
+      waiting: 1,
+      completed: 0,
+      failed: 0,
     },
   });
 });

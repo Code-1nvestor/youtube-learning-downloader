@@ -27,6 +27,7 @@ import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 import { runProcess, BinaryNotFoundError } from './core/process.ts';
 import type { RuntimeToolStatus } from './types/runtime.ts';
+import path from 'node:path';
 
 async function checkFfmpeg(binary: string): Promise<RuntimeToolStatus> {
   try {
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
   const downloadService = new DownloadService({
     binary: config.ytDlpBinary,
     ffmpegBinary: config.ffmpegBinary,
+    tempRootPath: path.join(config.appDataPath, 'download-cache'),
     getCookieArg: () => cookieService.getArg(),
     getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
   });

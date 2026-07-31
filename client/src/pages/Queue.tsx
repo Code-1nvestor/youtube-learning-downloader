@@ -118,6 +118,7 @@ function TaskItem({
   onAction: (task: DownloadTask, action: 'pause' | 'resume' | 'cancel' | 'remove') => void;
 }) {
   const openSettings = useStore((state) => state.openSettings);
+  const errorGuidance = task.errorCode ? getErrorGuidance(task.errorCode) : null;
   const statusColor: Record<string, string> = {
     queued: 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700',
     downloading: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40',
@@ -170,19 +171,21 @@ function TaskItem({
         )}
         {/* 错误信息 */}
         {task.status === 'failed' && task.error && (
-          <div className="mt-1 flex items-center gap-2">
-            <p className="text-xs text-red-500 dark:text-red-400 truncate">{task.error}</p>
-            {task.errorCode && getErrorGuidance(task.errorCode).settingsLabel && (
-              <button
-                type="button"
-                onClick={() => {
-                  const target = getErrorGuidance(task.errorCode!).settingsTarget;
-                  openSettings(target);
-                }}
-                className="shrink-0 text-xs text-primary-600 dark:text-primary-400 hover:underline"
-              >
-                {getErrorGuidance(task.errorCode).settingsLabel}
-              </button>
+          <div className="mt-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-red-500 dark:text-red-400 truncate" title={task.error}>{task.error}</p>
+              {errorGuidance?.settingsLabel && (
+                <button
+                  type="button"
+                  onClick={() => openSettings(errorGuidance.settingsTarget)}
+                  className="shrink-0 text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                >
+                  {errorGuidance.settingsLabel}
+                </button>
+              )}
+            </div>
+            {errorGuidance && (
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">下一步：{errorGuidance.guidance}</p>
             )}
           </div>
         )}

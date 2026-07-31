@@ -413,6 +413,21 @@ export class QueueService {
     this.tryStartNext();
   }
 
+  /** 从持久化历史恢复一个失败任务，重启应用后仍可一键重试。 */
+  retryFailedTask(task: DownloadTask): QueueStatus {
+    if (task.status !== 'failed') {
+      throw new AppError('INVALID_PARAM', '只有失败任务可以重新下载');
+    }
+
+    const current = this.tasks.get(task.id) ?? { ...task };
+    if (current.status !== 'failed') {
+      throw new AppError('INVALID_PARAM', `任务当前状态(${current.status})不可重新下载`);
+    }
+    this.tasks.set(current.id, current);
+    this.resume(current.id);
+    return this.getQueueStatus();
+  }
+
   /** 取消任务：终止子进程，删除部分文件，标记为 cancelled */
   cancel(id: string): void {
     const task = this.tasks.get(id);
@@ -434,14 +449,8 @@ export class QueueService {
     task.nextRetryAt = undefined;
     this.persistTask(task);
 
-    // 删除部分文件（静默失败：文件可能不存在）
-    try {
-      if (fs.existsSync(task.outputPath)) {
-        fs.unlinkSync(task.outputPath);
-      }
-    } catch {
-      // 忽略：文件删除失败不阻断流程
-    }
+    // 正在下载时必须等子进程完全退出再删分片，避免 Windows 文件句柄竞态。
+    if (!controller) this.downloadService.discardTaskArtifacts?.(task);
 
     this.tryStartNext();
   }
@@ -457,6 +466,7 @@ export class QueueService {
     }
 
     this.clearRetryTimer(id);
+    this.downloadService.cleanupTaskTempArtifacts?.(task);
     this.tasks.delete(id);
     this.deleteTaskFromDb(id);
   }
@@ -543,7 +553,9 @@ export class QueueService {
     } catch (err) {
       if (controller.signal.aborted) {
         // 被 abort（暂停或取消），状态已由 pause()/cancel() 设置
-        // 此处无需再覆盖
+        if (this.tasks.get(task.id)?.status === 'cancelled') {
+          this.downloadService.discardTaskArtifacts?.(task);
+        }
       } else if (err instanceof AppError) {
         if (RETRYABLE_ERROR_CODES.has(err.code) && task.retryCount < task.maxRetries) {
           this.scheduleRetry(task, err);

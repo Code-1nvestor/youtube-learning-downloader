@@ -3,6 +3,7 @@
  *
  * GET    /api/history           分页查询历史记录（completed/failed/cancelled）
  * GET    /api/history/:id       查询单条终态任务（桌面文件操作使用）
+ * POST   /api/history/:id/retry 重新下载失败任务
  * DELETE /api/history/:id       删除单条历史记录
  * DELETE /api/history           清空所有历史记录
  *
@@ -13,10 +14,11 @@
 
 import { Router, type Request, type Response } from 'express';
 import type { HistoryService } from '../services/history.service.ts';
+import type { QueueService } from '../services/queue.service.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
 
-export function createHistoryRouter(historyService: HistoryService): Router {
+export function createHistoryRouter(historyService: HistoryService, queueService: QueueService): Router {
   const router = Router();
 
   // -- 分页查询历史 --
@@ -38,6 +40,19 @@ export function createHistoryRouter(historyService: HistoryService): Router {
       throw new AppError('NOT_FOUND', `历史记录不存在: ${id}`);
     }
     res.json(ok(task));
+  });
+
+  // -- 失败任务重新下载：历史记录来自本机数据库，不接受客户端覆盖路径或格式。 --
+  router.post('/:id/retry', (req, res) => {
+    const id = req.params.id;
+    if (!id) {
+      throw new AppError('MISSING_PARAM', '缺少历史记录 ID');
+    }
+    const task = historyService.getHistoryItem(id);
+    if (!task) {
+      throw new AppError('NOT_FOUND', `历史记录不存在: ${id}`);
+    }
+    res.json(ok(queueService.retryFailedTask(task)));
   });
 
   // -- 清空所有历史（必须在 /:id 之前注册，否则会被 :id 匹配）--

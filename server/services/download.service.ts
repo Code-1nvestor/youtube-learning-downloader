@@ -49,6 +49,8 @@ export interface DownloadServiceOptions {
   getProxyUrl?: () => string | undefined;
   /** 测试或特殊环境可覆盖磁盘可用空间读取；null 表示无法判断。 */
   getAvailableDiskBytes?: (targetPath: string) => number | null;
+  /** 每个任务的下载分片与合并中间文件根目录。 */
+  tempRootPath: string;
 }
 
 export class DownloadService {
@@ -57,6 +59,7 @@ export class DownloadService {
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
   private readonly getAvailableDiskBytes: (targetPath: string) => number | null;
+  private readonly tempRootPath: string;
 
   constructor(options: DownloadServiceOptions) {
     this.binary = options.binary;
@@ -64,6 +67,7 @@ export class DownloadService {
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
     this.getAvailableDiskBytes = options.getAvailableDiskBytes ?? readAvailableDiskBytes;
+    this.tempRootPath = path.resolve(options.tempRootPath);
   }
 
   /**
@@ -80,6 +84,7 @@ export class DownloadService {
     callbacks: DownloadCallbacks,
   ): Promise<void> {
     this.checkDiskSpace(task);
+    fs.mkdirSync(this.getTaskTempPath(task), { recursive: true });
     const args = this.buildDownloadArgs(task);
 
     const result = await runProcessStreaming(this.binary, args, {
@@ -102,6 +107,44 @@ export class DownloadService {
       // 翻译 yt-dlp 错误（复用 yt-dlp.service.ts 的错误模式）
       throw translateDownloadError(result.stderr, task.title);
     }
+
+    this.cleanupTaskTempArtifacts(task);
+  }
+
+  /** 暂停/失败保留分片；取消或移除任务时只清理该任务的隔离目录。 */
+  cleanupTaskTempArtifacts(task: DownloadTask): void {
+    const taskTempPath = this.getTaskTempPath(task);
+    try {
+      fs.rmSync(taskTempPath, { recursive: true, force: true });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        console.warn(`[download] 无法清理任务临时目录 ${task.id}:`, error);
+      }
+    }
+  }
+
+  /** 取消任务时，进程退出后清理隔离分片及这个任务自己的目标文件。 */
+  discardTaskArtifacts(task: DownloadTask): void {
+    this.cleanupTaskTempArtifacts(task);
+    try {
+      const output = fs.statSync(task.outputPath, { throwIfNoEntry: false });
+      if (output?.isFile()) fs.unlinkSync(task.outputPath);
+    } catch (error) {
+      console.warn(`[download] 无法清理已取消任务的输出 ${task.id}:`, error);
+    }
+  }
+
+  getTaskTempPath(task: DownloadTask): string {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(task.id)) {
+      throw new AppError('PATH_NOT_ALLOWED', '任务 ID 无法用于临时目录');
+    }
+    const candidate = path.resolve(this.tempRootPath, task.id);
+    const relative = path.relative(this.tempRootPath, candidate);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new AppError('PATH_NOT_ALLOWED', '任务临时目录超出允许范围');
+    }
+    return candidate;
   }
 
   /** 在启动 yt-dlp 前预留下载、合并与转码所需空间。 */
@@ -142,9 +185,11 @@ export class DownloadService {
     // 格式选择
     args.push('-f', task.formatId);
 
-    // 输出路径模板
-    // yt-dlp 的 -o 直接接收最终路径（已由 naming.service 计算好）
-    args.push('-o', task.outputPath);
+    // 使用相对输出名 + 独立 home/temp 路径，确保中间分片不会散落在下载目录。
+    // yt-dlp 会在成功后才把中间文件从 temp 移到最终 home 目录。
+    args.push('--paths', `home:${path.dirname(task.outputPath)}`);
+    args.push('--paths', `temp:${this.getTaskTempPath(task)}`);
+    args.push('-o', path.basename(task.outputPath));
 
     if (this.ffmpegBinary && this.ffmpegBinary !== 'ffmpeg') {
       args.push('--ffmpeg-location', this.ffmpegBinary);

@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import { calculateRequiredDiskBytes, DownloadService } from '../server/services/download.service.ts';
 import { AppError } from '../server/types/errors.ts';
 import type { DownloadTask } from '../server/types/download.ts';
+
+const TEST_TEMP_ROOT = path.join(os.tmpdir(), 'yld-download-service-tests');
 
 function createTask(overrides: Partial<DownloadTask> = {}): DownloadTask {
   return {
@@ -32,6 +37,7 @@ function createTask(overrides: Partial<DownloadTask> = {}): DownloadTask {
 test('builds download arguments with ffmpeg, subtitles, cookies, and a safe video URL', () => {
   const service = new DownloadService({
     binary: 'yt-dlp',
+    tempRootPath: TEST_TEMP_ROOT,
     ffmpegBinary: 'C:\\Tools\\ffmpeg.exe',
     getCookieArg: () => ({ flag: '--cookies', value: 'C:\\Data\\cookies.txt' }),
     getProxyUrl: () => 'http://127.0.0.1:7890',
@@ -43,11 +49,15 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
     autoSubtitle: true,
   }));
 
-  assert.deepEqual(args.slice(0, 4), [
+  assert.deepEqual(args.slice(0, 8), [
     '-f',
     'bestvideo+bestaudio/best',
+    '--paths',
+    'home:C:\\Downloads',
+    '--paths',
+    `temp:${path.join(TEST_TEMP_ROOT, 'task-1')}`,
     '-o',
-    'C:\\Downloads\\test.mp4',
+    'test.mp4',
   ]);
   assert.ok(args.includes('--ffmpeg-location'));
   assert.ok(args.includes('--merge-output-format'));
@@ -67,6 +77,7 @@ test('blocks a download before launch when disk space is insufficient', () => {
   const estimatedBytes = 400 * 1024 * 1024;
   const service = new DownloadService({
     binary: 'yt-dlp',
+    tempRootPath: TEST_TEMP_ROOT,
     getAvailableDiskBytes: () => 100 * 1024 * 1024,
   });
 
@@ -80,10 +91,12 @@ test('blocks a download before launch when disk space is insufficient', () => {
 test('allows a download when disk space is sufficient or cannot be read', () => {
   const sufficient = new DownloadService({
     binary: 'yt-dlp',
+    tempRootPath: TEST_TEMP_ROOT,
     getAvailableDiskBytes: () => 2 * 1024 * 1024 * 1024,
   });
   const unknown = new DownloadService({
     binary: 'yt-dlp',
+    tempRootPath: TEST_TEMP_ROOT,
     getAvailableDiskBytes: () => null,
   });
 
@@ -92,7 +105,7 @@ test('allows a download when disk space is sufficient or cannot be read', () => 
 });
 
 test('extracts real MP3 and M4A audio instead of only changing the file extension', () => {
-  const service = new DownloadService({ binary: 'yt-dlp' });
+  const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
 
   for (const container of ['mp3', 'm4a']) {
     const args = service.buildDownloadArgs(createTask({
@@ -112,7 +125,7 @@ test('extracts real MP3 and M4A audio instead of only changing the file extensio
 });
 
 test('parses JSON progress output and ignores unrelated or malformed lines', () => {
-  const service = new DownloadService({ binary: 'yt-dlp' });
+  const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
   const parsed = service.parseProgress(
     '[download] {"percent":" 42.3%","speed":" 2.34MiB/s","eta":" 00:41","downloaded_bytes":52000000,"total_bytes":123456789}',
   );
@@ -127,4 +140,34 @@ test('parses JSON progress output and ignores unrelated or malformed lines', () 
   });
   assert.equal(service.parseProgress('[download] 42.3%'), null);
   assert.equal(service.parseProgress('{not-json}'), null);
+});
+
+test('isolates and removes only one cancelled task artifacts', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-artifacts-'));
+  const tempRootPath = path.join(root, 'download-cache');
+  const outputPath = path.join(root, 'downloads', 'lesson.mp4');
+  const service = new DownloadService({ binary: 'yt-dlp', tempRootPath });
+  const task = createTask({ id: 'safe-task-1', outputPath });
+  const siblingTask = createTask({ id: 'safe-task-2', outputPath: path.join(root, 'downloads', 'other.mp4') });
+
+  try {
+    fs.mkdirSync(service.getTaskTempPath(task), { recursive: true });
+    fs.mkdirSync(service.getTaskTempPath(siblingTask), { recursive: true });
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(path.join(service.getTaskTempPath(task), 'video.part'), 'partial');
+    fs.writeFileSync(path.join(service.getTaskTempPath(siblingTask), 'keep.part'), 'keep');
+    fs.writeFileSync(outputPath, 'cancelled output');
+
+    service.discardTaskArtifacts(task);
+
+    assert.equal(fs.existsSync(service.getTaskTempPath(task)), false);
+    assert.equal(fs.existsSync(outputPath), false);
+    assert.equal(fs.existsSync(path.join(service.getTaskTempPath(siblingTask), 'keep.part')), true);
+    assert.throws(
+      () => service.getTaskTempPath(createTask({ id: '../outside' })),
+      (error: unknown) => error instanceof AppError && error.code === 'PATH_NOT_ALLOWED',
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

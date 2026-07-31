@@ -9,6 +9,7 @@ import { createApp } from '../server/app.ts';
 import type { AppConfig } from '../server/config.ts';
 import type { YtDlpService } from '../server/core/yt-dlp.service.ts';
 import { initDatabase, type DbContext } from '../server/db/database.ts';
+import { taskToRow } from '../server/db/task-serializer.ts';
 import { CookieService } from '../server/services/cookie.service.ts';
 import { ConnectivityService } from '../server/services/connectivity.service.ts';
 import type { DownloadService } from '../server/services/download.service.ts';
@@ -250,14 +251,40 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     assert.equal(historyItem.status, 'completed');
     assert.equal(historyItem.outputPath, completedTask.outputPath);
 
+    const failedId = 'persisted-failed-retry';
+    const failedOutputPath = path.join(tempDir, 'downloads', 'integration', 'failed retry.mp4');
+    harness.db.stmts.upsertTask.run(taskToRow({
+      id: failedId,
+      videoId: 'YE7VzlLtp-4',
+      title: 'failed retry',
+      formatId: 'best',
+      container: 'mp4',
+      outputPath: failedOutputPath,
+      subtitleLangs: [],
+      subtitleMode: 'none',
+      autoSubtitle: false,
+      status: 'failed',
+      progress: 35,
+      speed: '',
+      eta: '',
+      downloadedBytes: 35,
+      totalBytes: 100,
+      estimatedBytes: 100,
+      retryCount: 2,
+      maxRetries: 2,
+      error: 'previous network failure',
+      errorCode: 'NETWORK_ERROR',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    }));
+
     const firstHistory = await apiRequest<{ tasks: DownloadTask[]; total: number }>(
       harness.baseUrl,
       '/api/history?page=1&pageSize=20',
     );
-    assert.equal(firstHistory.total, 2);
+    assert.equal(firstHistory.total, 3);
     assert.deepEqual(
       new Set(firstHistory.tasks.map((task) => task.status)),
-      new Set(['completed', 'cancelled']),
+      new Set(['completed', 'cancelled', 'failed']),
     );
 
     await harness.close();
@@ -267,11 +294,21 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
       harness.baseUrl,
       '/api/history?page=1&pageSize=20',
     );
-    assert.equal(restartedHistory.total, 2);
+    assert.equal(restartedHistory.total, 3);
     assert.deepEqual(
       new Set(restartedHistory.tasks.map((task) => task.id)),
-      new Set([completedId, cancelledId]),
+      new Set([completedId, cancelledId, failedId]),
     );
+
+    const retriedQueue = await apiRequest<{ tasks: DownloadTask[] }>(
+      harness.baseUrl,
+      `/api/history/${failedId}/retry`,
+      { method: 'POST' },
+    );
+    assert.equal(retriedQueue.tasks.some((task) => task.id === failedId), true);
+    const retriedTask = await waitForTask(harness.baseUrl, failedId, 'completed');
+    assert.equal(retriedTask.retryCount, 0);
+    await access(failedOutputPath);
   } finally {
     await harness?.close();
     await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
