@@ -9,7 +9,7 @@
  * - 搜索：同播放列表
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   api,
   ApiError,
@@ -20,7 +20,12 @@ import {
 import { useStore } from '../store';
 import { buildActualFormatChoices, buildPresetFormatSelector } from '../utils/formats';
 import { resolveResultIdentity } from '../utils/resolve-result';
-import { buildSubtitleFileName, parseSubtitleLanguages } from '../utils/subtitles';
+import {
+  buildSubtitleFileName,
+  isAudioContainer,
+  normalizeSubtitleModeForContainer,
+  parseSubtitleLanguages,
+} from '../utils/subtitles';
 import { getErrorGuidance } from '../utils/error-actions';
 
 export function Home() {
@@ -158,6 +163,17 @@ function SingleVideoDownload({
   const [submitting, setSubmitting] = useState(false);
   const { notify } = useStore();
   const selectedActualFormat = actualFormatChoices.find((choice) => choice.formatId === actualFormatId);
+  const effectiveContainer = formatMode === 'actual'
+    ? selectedActualFormat?.outputContainer ?? container
+    : container;
+  const audioOnly = isAudioContainer(effectiveContainer);
+
+  useEffect(() => {
+    if (audioOnly && subtitleMode === 'embed') {
+      setSubtitleMode('separate');
+      notify('纯音频不支持嵌入字幕，已改为外挂 SRT');
+    }
+  }, [audioOnly, notify, subtitleMode]);
 
   const handleDownload = async () => {
     if (formatMode === 'actual' && !selectedActualFormat) {
@@ -166,12 +182,11 @@ function SingleVideoDownload({
     }
     setSubmitting(true);
     try {
-      const outputContainer = formatMode === 'actual'
-        ? selectedActualFormat!.outputContainer
-        : container;
+      const outputContainer = effectiveContainer;
       const formatId = formatMode === 'actual'
         ? selectedActualFormat!.selector
         : buildPresetFormatSelector(quality, container);
+      const compatibleSubtitleMode = normalizeSubtitleModeForContainer(outputContainer, subtitleMode);
       const task: CreateDownloadTaskInput = {
         videoId: video.id,
         title: video.title,
@@ -182,9 +197,9 @@ function SingleVideoDownload({
         ...(selectedActualFormat?.format.filesize
           ? { estimatedBytes: selectedActualFormat.format.filesize }
           : {}),
-        subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
-        subtitleMode,
-        autoSubtitle: subtitleMode !== 'none' && autoSubtitle,
+        subtitleLangs: parseSubtitleLanguages(compatibleSubtitleMode, subtitleLangs),
+        subtitleMode: compatibleSubtitleMode,
+        autoSubtitle: compatibleSubtitleMode !== 'none' && autoSubtitle,
       };
       const message = await submitDownloadTasks([task], notify);
       if (message) onDownloaded(message);
@@ -274,7 +289,7 @@ function SingleVideoDownload({
             className="select"
           >
             <option value="none">不下载字幕</option>
-            <option value="embed">嵌入视频</option>
+            <option value="embed" disabled={audioOnly}>嵌入视频{audioOnly ? '（纯音频不可用）' : ''}</option>
             <option value="separate">外挂 SRT</option>
           </select>
         </Field>
@@ -289,6 +304,11 @@ function SingleVideoDownload({
           />
         </Field>
         </div>
+        {audioOnly && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            纯音频不能嵌入字幕；如需字幕，请选择外挂 SRT。
+          </p>
+        )}
         {subtitleMode !== 'none' && (
           <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             <input
@@ -458,6 +478,14 @@ function MultiVideoDownload({
   const [autoSubtitle, setAutoSubtitle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { notify } = useStore();
+  const audioOnly = isAudioContainer(container);
+
+  useEffect(() => {
+    if (audioOnly && subtitleMode === 'embed') {
+      setSubtitleMode('separate');
+      notify('纯音频不支持嵌入字幕，已改为外挂 SRT');
+    }
+  }, [audioOnly, notify, subtitleMode]);
 
   const toggle = (i: number) => {
     setSelected((prev) => {
@@ -473,6 +501,7 @@ function MultiVideoDownload({
   };
 
   const handleBatchDownload = async () => {
+    const compatibleSubtitleMode = normalizeSubtitleModeForContainer(container, subtitleMode);
     const selectedIndices = Array.from(selected).sort((a, b) => a - b);
     if (selectedIndices.some((index) => index < 0 || index >= videos.length)) {
       setSelected(new Set(videos.map((_, index) => index)));
@@ -490,9 +519,9 @@ function MultiVideoDownload({
           ...(v.playlistIndex ? { playlistIndex: v.playlistIndex } : {}),
           container,
           formatId: buildPresetFormatSelector(quality, container),
-          subtitleLangs: parseSubtitleLanguages(subtitleMode, subtitleLangs),
-          subtitleMode,
-          autoSubtitle: subtitleMode !== 'none' && autoSubtitle,
+          subtitleLangs: parseSubtitleLanguages(compatibleSubtitleMode, subtitleLangs),
+          subtitleMode: compatibleSubtitleMode,
+          autoSubtitle: compatibleSubtitleMode !== 'none' && autoSubtitle,
         };
       });
 
@@ -589,7 +618,7 @@ function MultiVideoDownload({
               className="select"
             >
               <option value="none">不下载</option>
-              <option value="embed">嵌入</option>
+              <option value="embed" disabled={audioOnly}>嵌入{audioOnly ? '（纯音频不可用）' : ''}</option>
               <option value="separate">外挂</option>
             </select>
           </Field>
@@ -604,6 +633,11 @@ function MultiVideoDownload({
             />
           </Field>
         </div>
+        {audioOnly && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            纯音频不能嵌入字幕；如需字幕，请选择外挂 SRT。
+          </p>
+        )}
         {subtitleMode !== 'none' && (
           <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             <input

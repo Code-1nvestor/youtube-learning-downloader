@@ -1,5 +1,17 @@
 export type SubtitleMode = 'none' | 'embed' | 'separate';
 
+export function isAudioContainer(container: string): boolean {
+  return container === 'mp3' || container === 'm4a';
+}
+
+/** 纯音频不能嵌入字幕；保留用户的字幕意图并降级为独立 SRT。 */
+export function normalizeSubtitleModeForContainer(
+  container: string,
+  mode: SubtitleMode,
+): SubtitleMode {
+  return isAudioContainer(container) && mode === 'embed' ? 'separate' : mode;
+}
+
 export function parseSubtitleLanguages(mode: SubtitleMode, input: string): string[] {
   if (mode === 'none') return [];
 

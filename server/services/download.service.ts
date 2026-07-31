@@ -84,8 +84,8 @@ export class DownloadService {
     callbacks: DownloadCallbacks,
   ): Promise<void> {
     this.checkDiskSpace(task);
-    fs.mkdirSync(this.getTaskTempPath(task), { recursive: true });
     const args = this.buildDownloadArgs(task);
+    fs.mkdirSync(this.getTaskTempPath(task), { recursive: true });
 
     const result = await runProcessStreaming(this.binary, args, {
       signal,
@@ -180,6 +180,15 @@ export class DownloadService {
    * 独立为公开方法便于测试和审查。
    */
   buildDownloadArgs(task: DownloadTask): string[] {
+    if (
+      (task.container === 'mp3' || task.container === 'm4a') &&
+      task.subtitleMode === 'embed'
+    ) {
+      throw new AppError(
+        'INVALID_PARAM',
+        `纯音频 ${task.container.toUpperCase()} 不支持嵌入字幕，请改用外挂 SRT`,
+      );
+    }
     const args: string[] = [];
 
     // 格式选择

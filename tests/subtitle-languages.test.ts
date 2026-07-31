@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildSubtitleFileName, parseSubtitleLanguages } from '../client/src/utils/subtitles.ts';
+import {
+  buildSubtitleFileName,
+  normalizeSubtitleModeForContainer,
+  parseSubtitleLanguages,
+} from '../client/src/utils/subtitles.ts';
 
 test('subtitle language parsing is disabled when subtitles are not requested', () => {
   assert.deepEqual(parseSubtitleLanguages('none', 'zh-Hans,en'), []);
@@ -18,4 +22,11 @@ test('subtitle language parsing trims, removes blanks, and de-duplicates values'
     parseSubtitleLanguages('separate', ' zh-Hans, en,zh-Hans, ,ja '),
     ['zh-Hans', 'en', 'ja'],
   );
+});
+
+test('downgrades embedded subtitles to a separate SRT for audio-only output', () => {
+  assert.equal(normalizeSubtitleModeForContainer('mp3', 'embed'), 'separate');
+  assert.equal(normalizeSubtitleModeForContainer('m4a', 'embed'), 'separate');
+  assert.equal(normalizeSubtitleModeForContainer('mp4', 'embed'), 'embed');
+  assert.equal(normalizeSubtitleModeForContainer('mp3', 'none'), 'none');
 });

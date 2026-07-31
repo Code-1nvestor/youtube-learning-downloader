@@ -20,6 +20,8 @@ import { ok } from '../types/result.ts';
 /** YouTube videoId 格式：11 位 [\w-] 字符 */
 const VIDEO_ID_RE = /^[\w-]{11}$/;
 const ALLOWED_CONTAINERS = new Set(['mp4', 'webm', 'mp3', 'm4a']);
+const ALLOWED_SUBTITLE_MODES = new Set(['none', 'embed', 'separate']);
+const AUDIO_CONTAINERS = new Set(['mp3', 'm4a']);
 
 export function createDownloadRouter(
   ytDlpService: YtDlpService,
@@ -61,6 +63,25 @@ export function createDownloadRouter(
           (typeof task.container !== 'string' || !ALLOWED_CONTAINERS.has(task.container))
         ) {
           throw new AppError('INVALID_PARAM', `tasks[${i}].container 仅支持 mp4、webm、mp3 或 m4a`);
+        }
+        if (
+          task.subtitleMode !== undefined &&
+          (typeof task.subtitleMode !== 'string' || !ALLOWED_SUBTITLE_MODES.has(task.subtitleMode))
+        ) {
+          throw new AppError('INVALID_PARAM', `tasks[${i}].subtitleMode 仅支持 none、embed 或 separate`);
+        }
+        if (
+          task.subtitleLangs !== undefined &&
+          (!Array.isArray(task.subtitleLangs) || task.subtitleLangs.some((language) => typeof language !== 'string'))
+        ) {
+          throw new AppError('INVALID_PARAM', `tasks[${i}].subtitleLangs 必须是语言代码数组`);
+        }
+        const container = task.container ?? 'mp4';
+        if (AUDIO_CONTAINERS.has(container) && task.subtitleMode === 'embed') {
+          throw new AppError(
+            'INVALID_PARAM',
+            `tasks[${i}] 纯音频 ${container.toUpperCase()} 不支持嵌入字幕，请改用 separate 外挂字幕`,
+          );
         }
       }
 

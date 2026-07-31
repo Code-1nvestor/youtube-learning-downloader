@@ -17,6 +17,7 @@ Electron 桌面版。
 - YouTube 连接诊断与 HTTP/HTTPS/SOCKS 代理设置
 - 推荐画质预设与单视频实际格式轨道选择
 - MP4/WebM 合并、MP3/M4A 音频提取
+- 音频与字幕组合防呆：MP3/M4A 禁止嵌入字幕，并自动保留为外挂 SRT
 - 字幕轨道选择、预览、单独下载与随视频处理
 - Cookie 文件或浏览器 Cookie 导入，并可在配置区域就地验证
 - Cookie 配置跨重启恢复

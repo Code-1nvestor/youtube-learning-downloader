@@ -124,6 +124,23 @@ test('extracts real MP3 and M4A audio instead of only changing the file extensio
   }
 });
 
+test('rejects embedded subtitles for audio-only output before launching yt-dlp', () => {
+  const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
+
+  for (const subtitleLangs of [['en'], []]) {
+    assert.throws(
+      () => service.buildDownloadArgs(createTask({
+        container: 'mp3',
+        outputPath: 'C:\\Downloads\\audio.mp3',
+        formatId: 'bestaudio/best',
+        subtitleLangs,
+        subtitleMode: 'embed',
+      })),
+      (error: unknown) => error instanceof AppError && error.code === 'INVALID_PARAM',
+    );
+  }
+});
+
 test('parses JSON progress output and ignores unrelated or malformed lines', () => {
   const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
   const parsed = service.parseProgress(

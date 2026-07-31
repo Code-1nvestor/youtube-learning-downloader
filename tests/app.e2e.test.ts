@@ -225,6 +225,27 @@ test('HTTP download flow persists completed and cancelled tasks across restart',
     assert.equal(invalidContainerPayload.success, false);
     assert.equal(invalidContainerPayload.error?.code, 'INVALID_PARAM');
 
+    const invalidAudioSubtitle = await fetch(`${harness.baseUrl}/api/download`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tasks: [{
+          videoId: 'YE7VzlLtp-4',
+          title: 'invalid audio subtitle',
+          container: 'mp3',
+          subtitleMode: 'embed',
+          subtitleLangs: ['en'],
+        }],
+      }),
+    });
+    assert.equal(invalidAudioSubtitle.status, 400);
+    const invalidAudioSubtitlePayload = await invalidAudioSubtitle.json() as {
+      success: boolean;
+      error?: { code: string };
+    };
+    assert.equal(invalidAudioSubtitlePayload.success, false);
+    assert.equal(invalidAudioSubtitlePayload.error?.code, 'INVALID_PARAM');
+
     const created = await apiRequest<{ taskIds: string[] }>(harness.baseUrl, '/api/download', {
       method: 'POST',
       body: JSON.stringify({
