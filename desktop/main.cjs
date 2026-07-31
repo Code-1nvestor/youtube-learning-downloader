@@ -14,6 +14,7 @@ const {
   hasVersionConflict,
   normalizeAppVersion,
 } = require('./release-policy.cjs');
+const { createCloseGuard, formatActiveTaskSummary } = require('./close-guard.cjs');
 
 let mainWindow = null;
 let backendProcess = null;
@@ -208,7 +209,7 @@ function stopBackend() {
 }
 
 function createWindow(url) {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1180,
     height: 820,
     minWidth: 900,
@@ -223,19 +224,46 @@ function createWindow(url) {
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
+  mainWindow = window;
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  const closeGuard = createCloseGuard({
+    loadQueueStatus: () => loadLocalApiData('/api/queue'),
+    confirmClose: async ({ statusKnown, summary }) => {
+      const result = await dialog.showMessageBox(window, {
+        type: 'warning',
+        title: statusKnown ? '下载任务仍在进行' : '暂时无法确认下载状态',
+        message: statusKnown
+          ? `还有 ${summary.total} 个任务尚未结束`
+          : '应用暂时无法读取下载队列状态',
+        detail: statusKnown
+          ? `${formatActiveTaskSummary(summary)}。\n\n退出会停止当前下载；下载中的任务会保留断点，下次启动后可继续。`
+          : '直接退出可能会中断正在进行的下载。建议返回应用确认队列状态；如果确定要退出，也可以继续。',
+        buttons: ['继续下载', '退出应用'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      return result.response === 1;
+    },
+    approveClose: () => window.close(),
+    onError: (error) => console.error('[desktop] 关闭保护检查失败:', error),
   });
-  mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+
+  window.once('ready-to-show', () => window.show());
+  window.on('close', (event) => {
+    if (!shuttingDown) closeGuard.handleClose(event);
+  });
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
+  window.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
     if (targetUrl.startsWith('https://')) void shell.openExternal(targetUrl);
     return { action: 'deny' };
   });
-  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+  window.webContents.on('will-navigate', (event, targetUrl) => {
     if (appOrigin && new URL(targetUrl).origin !== appOrigin) event.preventDefault();
   });
-  void mainWindow.loadURL(url);
+  void window.loadURL(url);
 }
 
 function registerIpcHandlers() {
