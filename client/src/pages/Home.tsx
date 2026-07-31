@@ -19,6 +19,7 @@ import {
 } from '../api';
 import { useStore } from '../store';
 import { buildActualFormatChoices, buildPresetFormatSelector } from '../utils/formats';
+import { resolveResultIdentity } from '../utils/resolve-result';
 import { buildSubtitleFileName, parseSubtitleLanguages } from '../utils/subtitles';
 import { getErrorGuidance } from '../utils/error-actions';
 
@@ -131,10 +132,11 @@ function ResolveResultView({
   result: ResolveResult;
   onDownloaded: (message: string) => void;
 }) {
+  const identity = resolveResultIdentity(result);
   if (result.kind === 'video' && result.videos.length === 1) {
-    return <SingleVideoDownload key={result.videos[0].id} video={result.videos[0]} onDownloaded={onDownloaded} />;
+    return <SingleVideoDownload key={identity} video={result.videos[0]} onDownloaded={onDownloaded} />;
   }
-  return <MultiVideoDownload title={result.title} videos={result.videos} onDownloaded={onDownloaded} />;
+  return <MultiVideoDownload key={identity} title={result.title} videos={result.videos} onDownloaded={onDownloaded} />;
 }
 
 /** 单视频下载配置 */
@@ -471,8 +473,14 @@ function MultiVideoDownload({
   };
 
   const handleBatchDownload = async () => {
-    const tasks: CreateDownloadTaskInput[] = Array.from(selected)
-      .sort((a, b) => a - b)
+    const selectedIndices = Array.from(selected).sort((a, b) => a - b);
+    if (selectedIndices.some((index) => index < 0 || index >= videos.length)) {
+      setSelected(new Set(videos.map((_, index) => index)));
+      notify('解析结果已更新，已重置视频选择，请确认后再下载');
+      return;
+    }
+
+    const tasks: CreateDownloadTaskInput[] = selectedIndices
       .map((i) => {
         const v = videos[i]!;
         return {
