@@ -30,9 +30,11 @@ interface AppState {
   clearSettingsTarget: () => void;
 
   // -- 解析 --
+  resolveInput: string;
   resolveResult: ResolveResult | null;
   resolving: boolean;
   error: UserFacingError | null;
+  setResolveInput: (value: string) => void;
   setResolving: (b: boolean) => void;
   setResolveResult: (r: ResolveResult | null) => void;
   setError: (e: UserFacingError | null) => void;
@@ -73,12 +75,14 @@ export const useStore = create<AppState>((set) => ({
   clearSettingsTarget: () => set({ settingsTarget: null }),
 
   // 解析
+  resolveInput: '',
   resolveResult: null,
   resolving: false,
   error: null,
+  setResolveInput: (value) => set({ resolveInput: value }),
   setResolving: (b) => set({ resolving: b }),
-  setResolveResult: (r) => set({ resolveResult: r, error: null }),
-  setError: (e) => set({ error: e, resolving: false }),
+  setResolveResult: (r) => set({ resolveResult: r }),
+  setError: (e) => set({ error: e }),
 
   // 队列
   tasks: [],

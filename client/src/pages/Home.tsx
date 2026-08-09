@@ -28,28 +28,33 @@ import {
 } from '../utils/subtitles';
 import { getErrorGuidance } from '../utils/error-actions';
 import { getGentleBatchLimit, isGentleBatchAllowed } from '../utils/gentle-mode';
+import { runResolveFlow } from '../utils/resolve-flow';
 
 export function Home() {
-  const { resolveResult, resolving, error, setResolving, setResolveResult, setError, setView, openSettings, notify } =
-    useStore();
-  const [url, setUrl] = useState('');
+  const {
+    resolveInput,
+    resolveResult,
+    resolving,
+    error,
+    setResolveInput,
+    setResolving,
+    setResolveResult,
+    setError,
+    setView,
+    openSettings,
+    notify,
+  } = useStore();
 
   const handleResolve = useCallback(async () => {
-    const trimmed = url.trim();
+    const trimmed = resolveInput.trim();
     if (!trimmed) return;
 
-    setResolving(true);
-    setError(null);
-    try {
-      const result = await api.resolve(trimmed);
-      setResolveResult(result);
-    } catch (e) {
-      setError(e instanceof ApiError
-        ? { code: e.code, message: e.message }
-        : { code: 'UNKNOWN', message: '解析失败，请检查网络或 URL' });
-      setResolveResult(null);
-    }
-  }, [url, setResolving, setError, setResolveResult]);
+    await runResolveFlow(trimmed, api.resolve, {
+      setResolving,
+      setResolveResult,
+      setError,
+    });
+  }, [resolveInput, setResolving, setError, setResolveResult]);
 
   return (
     <div className="space-y-6">
@@ -60,8 +65,8 @@ export function Home() {
         </label>
         <div className="flex gap-3">
           <textarea
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            value={resolveInput}
+            onChange={(e) => setResolveInput(e.target.value)}
             placeholder="粘贴视频/播放列表 URL，或输入搜索关键词..."
             rows={2}
             className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
@@ -74,7 +79,7 @@ export function Home() {
           />
           <button
             onClick={handleResolve}
-            disabled={resolving || !url.trim()}
+            disabled={resolving || !resolveInput.trim()}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
           >
             {resolving ? '解析中...' : '解析'}
@@ -83,6 +88,18 @@ export function Home() {
         <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
           支持：视频 URL / 播放列表 URL / 频道 URL / 关键词搜索
         </p>
+        {resolving && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+          >
+            <span className="mt-1 h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+            <span>
+              正在连接 YouTube 并读取视频信息，请稍候。网络较慢时可能需要接近 60 秒；切换页面不会清空链接，返回首页后可继续查看结果。
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 错误提示 */}
