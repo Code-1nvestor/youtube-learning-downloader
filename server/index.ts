@@ -77,6 +77,10 @@ async function main(): Promise<void> {
       downloadPath: config.downloadPath,
       namingTemplate: config.namingTemplate,
       proxyUrl: config.proxyUrl,
+      gentleMode: true,
+      gentleRateLimitMbps: 2,
+      gentleCooldownSeconds: 30,
+      gentleBatchLimit: 20,
     },
     dbContext,
   );
@@ -86,6 +90,7 @@ async function main(): Promise<void> {
     timeoutMs: config.resolveTimeoutMs,
     getCookieArg: () => cookieService.getArg(),
     getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
+    getGentleSettings: () => settingsService.getSettings(),
   });
 
   // 环境自检：失败不阻断启动，让 API 层返回结构化错误引导用户
@@ -118,6 +123,7 @@ async function main(): Promise<void> {
     tempRootPath: path.join(config.appDataPath, 'download-cache'),
     getCookieArg: () => cookieService.getArg(),
     getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
+    getGentleSettings: () => settingsService.getSettings(),
   });
   const namingService = new NamingService();
   const dbForQueue = dbContext;
@@ -129,6 +135,10 @@ async function main(): Promise<void> {
       maxRetries: appSettings.maxRetries,
       downloadPath: appSettings.downloadPath,
       namingTemplate: appSettings.namingTemplate,
+      gentleMode: appSettings.gentleMode,
+      gentleRateLimitMbps: appSettings.gentleRateLimitMbps,
+      gentleCooldownSeconds: appSettings.gentleCooldownSeconds,
+      gentleBatchLimit: appSettings.gentleBatchLimit,
     },
     dbForQueue,
   );
@@ -200,6 +210,7 @@ async function main(): Promise<void> {
   // 优雅退出：先 close 停止接收新连接，关闭 DB，再退出
   const shutdown = (signal: string): void => {
     console.log(`\n[shutdown] 收到 ${signal}，正在关闭...`);
+    queueService.shutdown();
     server.close(() => {
       console.log('[shutdown] 已停止接收新连接');
       // 关闭数据库

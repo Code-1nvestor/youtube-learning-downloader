@@ -4,6 +4,7 @@ import { rowToTask, taskToRow, type TaskRow } from '../db/task-serializer.ts';
 import type { DownloadStatus, DownloadTask, QueueStatus } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
 import type { AppSettings } from '../types/settings.ts';
+import { DEFAULT_GENTLE_SETTINGS } from '../types/settings.ts';
 import {
   DATA_BACKUP_FORMAT,
   DATA_BACKUP_VERSION,
@@ -164,7 +165,17 @@ export function validateBackupDocument(input: unknown): DataBackupDocument {
 function validateBackupSettings(input: unknown): AppSettings {
   const settings = requireRecord(input, 'data.settings');
   const keys = Object.keys(settings);
-  const allowed = new Set(['downloadPath', 'maxConcurrent', 'maxRetries', 'namingTemplate', 'proxyUrl']);
+  const allowed = new Set([
+    'downloadPath',
+    'maxConcurrent',
+    'maxRetries',
+    'namingTemplate',
+    'proxyUrl',
+    'gentleMode',
+    'gentleRateLimitMbps',
+    'gentleCooldownSeconds',
+    'gentleBatchLimit',
+  ]);
   if (keys.some((key) => !allowed.has(key))) {
     throw new AppError('INVALID_PARAM', '备份设置包含不支持的字段');
   }
@@ -195,7 +206,30 @@ function validateBackupSettings(input: unknown): AppSettings {
   }
   if (proxyUrl) validateBackupProxyUrl(proxyUrl);
 
-  return { downloadPath: path.resolve(downloadPath), maxConcurrent, maxRetries, namingTemplate, proxyUrl };
+  const gentleMode = settings.gentleMode === undefined
+    ? DEFAULT_GENTLE_SETTINGS.gentleMode
+    : requireBoolean(settings.gentleMode, 'gentleMode');
+  const gentleRateLimitMbps = settings.gentleRateLimitMbps === undefined
+    ? DEFAULT_GENTLE_SETTINGS.gentleRateLimitMbps
+    : requireInteger(settings.gentleRateLimitMbps, 'gentleRateLimitMbps', 1, 10);
+  const gentleCooldownSeconds = settings.gentleCooldownSeconds === undefined
+    ? DEFAULT_GENTLE_SETTINGS.gentleCooldownSeconds
+    : requireInteger(settings.gentleCooldownSeconds, 'gentleCooldownSeconds', 10, 300);
+  const gentleBatchLimit = settings.gentleBatchLimit === undefined
+    ? DEFAULT_GENTLE_SETTINGS.gentleBatchLimit
+    : requireInteger(settings.gentleBatchLimit, 'gentleBatchLimit', 1, 50);
+
+  return {
+    downloadPath: path.resolve(downloadPath),
+    maxConcurrent,
+    maxRetries,
+    namingTemplate,
+    proxyUrl,
+    gentleMode,
+    gentleRateLimitMbps,
+    gentleCooldownSeconds,
+    gentleBatchLimit,
+  };
 }
 
 function validateBackupTask(input: unknown, index: number): DownloadTask {
@@ -362,6 +396,13 @@ function requireInteger(input: unknown, field: string, min: number, max: number)
     throw new AppError('INVALID_PARAM', `${field} 必须是安全整数`);
   }
   return value;
+}
+
+function requireBoolean(input: unknown, field: string): boolean {
+  if (typeof input !== 'boolean') {
+    throw new AppError('INVALID_PARAM', `${field} 必须是布尔值`);
+  }
+  return input;
 }
 
 function requireIsoDate(input: unknown, field: string): string {

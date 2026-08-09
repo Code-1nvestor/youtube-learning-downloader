@@ -367,3 +367,279 @@ test('restores a persisted retry timer after restart without duplicating the tas
     fs.rmSync(outputRoot, { recursive: true, force: true });
   }
 });
+
+class CompletingDownloadService {
+  readonly started: string[] = [];
+  maxActive = 0;
+  private active = 0;
+
+  async download(task: DownloadTask): Promise<void> {
+    this.started.push(task.id);
+    this.active += 1;
+    this.maxActive = Math.max(this.maxActive, this.active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    this.active -= 1;
+  }
+}
+
+test('gentle mode fixes effective concurrency at one and waits for cooldown', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-gentle-'));
+  const completing = new CompletingDownloadService();
+  const queue = new QueueService(
+    completing as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 4,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+      gentleMode: true,
+      gentleRateLimitMbps: 2,
+      gentleCooldownSeconds: 10,
+      gentleBatchLimit: 20,
+    },
+  );
+
+  try {
+    const { taskIds } = queue.enqueue([
+      { videoId: 'gentle-one', title: 'gentle one' },
+      { videoId: 'gentle-two', title: 'gentle two' },
+    ]);
+    await waitUntil(() => queue.getTask(taskIds[0]!)?.status === 'completed');
+    assert.equal(completing.maxActive, 1);
+    assert.equal(queue.getTask(taskIds[1]!)?.status, 'queued');
+
+    queue.updateOptions({
+      maxConcurrent: 4,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+      gentleMode: false,
+      gentleRateLimitMbps: 2,
+      gentleCooldownSeconds: 10,
+      gentleBatchLimit: 20,
+    });
+    await waitUntil(() => queue.getTask(taskIds[1]!)?.status === 'completed');
+    assert.equal(queue.getTask(taskIds[1]!)?.status, 'completed');
+  } finally {
+    queue.shutdown();
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
+
+class ProtectiveDownloadService {
+  attempts = 0;
+
+  constructor(private readonly code: 'RATE_LIMITED' | 'COOKIE_ERROR') {}
+
+  async download(): Promise<void> {
+    this.attempts += 1;
+    if (this.attempts === 1) throw new AppError(this.code, 'protective failure');
+  }
+}
+
+test('protective errors pause queued work only when gentle mode is enabled', async () => {
+  for (const code of ['RATE_LIMITED', 'COOKIE_ERROR'] as const) {
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), `yld-queue-protective-${code.toLowerCase()}-`));
+    const service = new ProtectiveDownloadService(code);
+    const queue = new QueueService(
+      service as unknown as DownloadService,
+      new NamingService(),
+      {
+        maxConcurrent: 1,
+        maxRetries: 2,
+        downloadPath: outputRoot,
+        namingTemplate: '{title}.{ext}',
+        gentleMode: true,
+        gentleRateLimitMbps: 2,
+        gentleCooldownSeconds: 30,
+        gentleBatchLimit: 20,
+      },
+    );
+
+    try {
+      const { taskIds } = queue.enqueue([
+        { videoId: `protect-${code}-one`, title: 'protect one' },
+        { videoId: `protect-${code}-two`, title: 'protect two' },
+        { videoId: `protect-${code}-three`, title: 'protect three' },
+      ]);
+      await waitUntil(() => queue.getTask(taskIds[0]!)?.status === 'failed');
+      assert.equal(queue.getTask(taskIds[0]!)?.errorCode, code);
+      for (const id of taskIds.slice(1)) {
+        assert.equal(queue.getTask(id)?.status, 'paused');
+        assert.equal(queue.getTask(id)?.errorCode, code);
+        assert.match(queue.getTask(id)?.error ?? '', /后续任务已暂停/);
+        assert.equal(queue.getTask(id)?.nextRetryAt, undefined);
+      }
+      assert.equal(service.attempts, 1);
+    } finally {
+      queue.shutdown();
+      fs.rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }
+});
+
+test('protective errors behave as ordinary failures when gentle mode is disabled', async () => {
+  for (const code of ['RATE_LIMITED', 'COOKIE_ERROR'] as const) {
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), `yld-queue-normal-${code.toLowerCase()}-`));
+    const service = new ProtectiveDownloadService(code);
+    const queue = new QueueService(
+      service as unknown as DownloadService,
+      new NamingService(),
+      {
+        maxConcurrent: 1,
+        maxRetries: 2,
+        downloadPath: outputRoot,
+        namingTemplate: '{title}.{ext}',
+        gentleMode: false,
+        gentleRateLimitMbps: 2,
+        gentleCooldownSeconds: 30,
+        gentleBatchLimit: 20,
+      },
+    );
+
+    try {
+      const { taskIds } = queue.enqueue([
+        { videoId: `normal-${code}-one`, title: 'normal one' },
+        { videoId: `normal-${code}-two`, title: 'normal two' },
+      ]);
+      await waitUntil(() => queue.getTask(taskIds[1]!)?.status === 'completed');
+      assert.equal(queue.getTask(taskIds[0]!)?.status, 'failed');
+      assert.equal(queue.getTask(taskIds[0]!)?.errorCode, code);
+      assert.equal(queue.getTask(taskIds[1]!)?.status, 'completed');
+      assert.equal(service.attempts, 2);
+    } finally {
+      queue.shutdown();
+      fs.rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }
+});
+
+test('enforces the gentle batch limit before creating tasks and allows its boundary cases', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-gentle-batch-'));
+  const queue = new QueueService(
+    new CompletingDownloadService() as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 2,
+      maxRetries: 2,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+      gentleMode: true,
+      gentleRateLimitMbps: 2,
+      gentleCooldownSeconds: 10,
+      gentleBatchLimit: 2,
+    },
+  );
+
+  try {
+    assert.throws(
+      () => queue.enqueue([
+        { videoId: 'gentle-limit-one', title: 'gentle limit one' },
+        { videoId: 'gentle-limit-two', title: 'gentle limit two' },
+        { videoId: 'gentle-limit-three', title: 'gentle limit three' },
+      ]),
+      (error: unknown) => error instanceof AppError && error.code === 'INVALID_PARAM',
+    );
+    assert.equal(queue.getAllTasks().length, 0);
+
+    const atLimit = queue.enqueue([
+      { videoId: 'gentle-boundary-one', title: 'gentle boundary one' },
+      { videoId: 'gentle-boundary-two', title: 'gentle boundary two' },
+    ]);
+    assert.equal(atLimit.taskIds.length, 2);
+    const single = queue.enqueue([{ videoId: 'gentle-single', title: 'gentle single' }]);
+    assert.equal(single.taskIds.length, 1);
+  } finally {
+    queue.shutdown();
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+
+  const normalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-normal-batch-'));
+  const normalQueue = new QueueService(
+    new CompletingDownloadService() as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 2,
+      maxRetries: 2,
+      downloadPath: normalRoot,
+      namingTemplate: '{title}.{ext}',
+      gentleMode: false,
+      gentleRateLimitMbps: 2,
+      gentleCooldownSeconds: 30,
+      gentleBatchLimit: 1,
+    },
+  );
+  try {
+    const result = normalQueue.enqueue([
+      { videoId: 'normal-batch-one', title: 'normal batch one' },
+      { videoId: 'normal-batch-two', title: 'normal batch two' },
+    ]);
+    assert.equal(result.taskIds.length, 2);
+  } finally {
+    normalQueue.shutdown();
+    fs.rmSync(normalRoot, { recursive: true, force: true });
+  }
+});
+
+class RetryThenProtectiveDownloadService {
+  readonly attempts = new Map<string, number>();
+
+  constructor(private readonly protectiveCode: 'RATE_LIMITED' | 'COOKIE_ERROR') {}
+
+  async download(task: DownloadTask): Promise<void> {
+    const attempt = (this.attempts.get(task.id) ?? 0) + 1;
+    this.attempts.set(task.id, attempt);
+    if (task.title === 'retry first' && attempt === 1) {
+      throw new AppError('NETWORK_ERROR', 'temporary network failure');
+    }
+    if (task.title === 'protect second' && attempt === 1) {
+      throw new AppError(this.protectiveCode, 'protective failure');
+    }
+  }
+}
+
+test('protective errors pause existing retrying tasks and clear their retry timers', async () => {
+  for (const code of ['RATE_LIMITED', 'COOKIE_ERROR'] as const) {
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), `yld-queue-clear-retry-${code.toLowerCase()}-`));
+    const service = new RetryThenProtectiveDownloadService(code);
+    const queue = new QueueService(
+      service as unknown as DownloadService,
+      new NamingService(),
+      {
+        maxConcurrent: 1,
+        maxRetries: 2,
+        downloadPath: outputRoot,
+        namingTemplate: '{title}.{ext}',
+        gentleMode: true,
+        gentleRateLimitMbps: 2,
+        gentleCooldownSeconds: 0.5,
+        gentleBatchLimit: 20,
+      },
+      null,
+      () => 1_000,
+    );
+
+    try {
+      const { taskIds } = queue.enqueue([
+        { videoId: `retry-${code}-one`, title: 'retry first' },
+        { videoId: `protect-${code}-two`, title: 'protect second' },
+      ]);
+      const retryingId = taskIds[0]!;
+      const protectedId = taskIds[1]!;
+      await waitUntil(() => queue.getTask(retryingId)?.status === 'retrying');
+      await waitUntil(() => queue.getTask(protectedId)?.status === 'failed');
+
+      assert.equal(queue.getTask(retryingId)?.status, 'paused');
+      assert.equal(queue.getTask(retryingId)?.errorCode, code);
+      assert.equal(queue.getTask(retryingId)?.nextRetryAt, undefined);
+      assert.equal(queue.getTask(protectedId)?.errorCode, code);
+
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      assert.equal(service.attempts.get(retryingId), 1);
+    } finally {
+      queue.shutdown();
+      fs.rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }
+});

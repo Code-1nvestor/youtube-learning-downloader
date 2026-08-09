@@ -411,6 +411,10 @@ function DownloadSettingsSection() {
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [maxRetries, setMaxRetries] = useState(2);
   const [namingTemplate, setNamingTemplate] = useState('{course}/{date}_{num}_{title}.{ext}');
+  const [gentleMode, setGentleMode] = useState(true);
+  const [gentleRateLimitMbps, setGentleRateLimitMbps] = useState(2);
+  const [gentleCooldownSeconds, setGentleCooldownSeconds] = useState(30);
+  const [gentleBatchLimit, setGentleBatchLimit] = useState(20);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -423,6 +427,10 @@ function DownloadSettingsSection() {
         setMaxConcurrent(value.maxConcurrent);
         setMaxRetries(value.maxRetries);
         setNamingTemplate(value.namingTemplate);
+        setGentleMode(value.gentleMode);
+        setGentleRateLimitMbps(value.gentleRateLimitMbps);
+        setGentleCooldownSeconds(value.gentleCooldownSeconds);
+        setGentleBatchLimit(value.gentleBatchLimit);
       })
       .catch((error) => {
         if (!cancelled) notify(error instanceof ApiError ? error.message : '读取下载设置失败');
@@ -445,12 +453,20 @@ function DownloadSettingsSection() {
         maxConcurrent,
         maxRetries,
         namingTemplate: namingTemplate.trim(),
+        gentleMode,
+        gentleRateLimitMbps,
+        gentleCooldownSeconds,
+        gentleBatchLimit,
       });
       setSettings(value);
       setDownloadPath(value.downloadPath);
       setMaxConcurrent(value.maxConcurrent);
       setMaxRetries(value.maxRetries);
       setNamingTemplate(value.namingTemplate);
+      setGentleMode(value.gentleMode);
+      setGentleRateLimitMbps(value.gentleRateLimitMbps);
+      setGentleCooldownSeconds(value.gentleCooldownSeconds);
+      setGentleBatchLimit(value.gentleBatchLimit);
       notify(value.persistent ? '下载设置已保存' : '设置已应用，但数据库不可用，重启后会恢复默认值');
     } catch (error) {
       notify(error instanceof ApiError ? error.message : '下载设置保存失败');
@@ -547,6 +563,35 @@ function DownloadSettingsSection() {
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
               可用变量：{'{course}'} {'{date}'} {'{num}'} {'{title}'} {'{quality}'} {'{ext}'}；必须包含 {'{title}'} 和 {'{ext}'}。
             </p>
+        </div>
+
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={gentleMode}
+              onChange={(event) => setGentleMode(event.target.checked)}
+              className="accent-primary-600"
+            />
+            开启温和下载模式
+          </label>
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            会限制下载速度、串行分片并在任务间等待；不保证不被 YouTube 限流。开启时有效并发固定为 1，但会保留你设置的同时下载数量。
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">单任务限速（MB/s）</label>
+              <input type="number" min={1} max={10} step={1} value={gentleRateLimitMbps} onChange={(event) => setGentleRateLimitMbps(Number(event.target.value))} className="input" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">任务间冷却（秒）</label>
+              <input type="number" min={10} max={300} step={1} value={gentleCooldownSeconds} onChange={(event) => setGentleCooldownSeconds(Number(event.target.value))} className="input" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">单次批量上限</label>
+              <input type="number" min={1} max={50} step={1} value={gentleBatchLimit} onChange={(event) => setGentleBatchLimit(Number(event.target.value))} className="input" />
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end">

@@ -28,6 +28,7 @@ import { translateYtDlpError } from './yt-dlp-errors.ts';
 import { injectYtDlpNetworkArgs } from './yt-dlp-network.ts';
 import { AppError } from '../types/errors.ts';
 import type { CookieArg } from '../types/auth.ts';
+import type { GentleSettings } from '../types/settings.ts';
 import type {
   ResolveResult,
   VideoInfo,
@@ -49,9 +50,11 @@ export interface YtDlpServiceOptions {
   getCookieArg?: () => CookieArg | undefined;
   /** 代理地址提供者（可选，运行时动态读取） */
   getProxyUrl?: () => string | undefined;
+  /** 温和模式配置提供者（解析请求时动态读取） */
+  getGentleSettings?: () => GentleSettings;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'getCookieArg' | 'getProxyUrl'>> = {
+const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'getCookieArg' | 'getProxyUrl' | 'getGentleSettings'>> = {
   binary: 'yt-dlp',
   timeoutMs: 60_000,
 };
@@ -116,12 +119,14 @@ export class YtDlpService {
   private readonly timeoutMs: number;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
+  private readonly getGentleSettings?: () => GentleSettings;
 
   constructor(options: YtDlpServiceOptions = {}) {
     this.binary = options.binary ?? DEFAULT_OPTIONS.binary;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs;
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
+    this.getGentleSettings = options.getGentleSettings;
   }
 
   /**
@@ -229,8 +234,7 @@ export class YtDlpService {
   /** 执行 yt-dlp 并统一翻译错误（所有私有方法的唯一出口） */
   private async exec(args: string[], contextMessage: string) {
     try {
-      // 注入代理与 Cookie 参数（如已配置）
-      const finalArgs = injectYtDlpNetworkArgs(args, this.getProxyUrl, this.getCookieArg);
+      const finalArgs = this.buildResolveArgs(args);
       const result = await runProcess(this.binary, finalArgs, {
         timeoutMs: this.timeoutMs,
       });
@@ -249,6 +253,15 @@ export class YtDlpService {
       }
       throw err;
     }
+  }
+
+  /** 构建解析命令参数，供测试和诊断确认温和模式开关。 */
+  buildResolveArgs(args: string[]): string[] {
+    const finalArgs = injectYtDlpNetworkArgs([...args], this.getProxyUrl, this.getCookieArg);
+    if (this.getGentleSettings?.()?.gentleMode) {
+      finalArgs.unshift('--sleep-requests', '1');
+    }
+    return finalArgs;
   }
 
   // ——————————————————————————————————————————

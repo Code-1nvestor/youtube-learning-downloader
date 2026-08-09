@@ -5,10 +5,22 @@ import { AppError } from '../types/errors.ts';
 import type {
   AppSettings,
   AppSettingsStatus,
+  GentleSettings,
   UpdateAppSettingsInput,
 } from '../types/settings.ts';
+import { DEFAULT_GENTLE_SETTINGS } from '../types/settings.ts';
 
-const SETTING_KEYS = ['downloadPath', 'maxConcurrent', 'maxRetries', 'namingTemplate', 'proxyUrl'] as const;
+export const SETTING_KEYS = [
+  'downloadPath',
+  'maxConcurrent',
+  'maxRetries',
+  'namingTemplate',
+  'proxyUrl',
+  'gentleMode',
+  'gentleRateLimitMbps',
+  'gentleCooldownSeconds',
+  'gentleBatchLimit',
+] as const;
 const ALLOWED_TEMPLATE_TOKENS = new Set([
   'course',
   'date',
@@ -26,9 +38,12 @@ export class SettingsService {
   private settings: AppSettings;
   private readonly db: DbContext | null;
 
-  constructor(defaults: AppSettings, db: DbContext | null = null) {
+  constructor(
+    defaults: Omit<AppSettings, keyof GentleSettings> & Partial<GentleSettings>,
+    db: DbContext | null = null,
+  ) {
     this.db = db;
-    const validatedDefaults = this.validate({ ...defaults });
+    const validatedDefaults = this.validate({ ...DEFAULT_GENTLE_SETTINGS, ...defaults });
     const persisted = this.loadPersisted(validatedDefaults);
     try {
       this.ensureDownloadPath(persisted.downloadPath);
@@ -110,7 +125,49 @@ export class SettingsService {
     const maxRetries = this.validateMaxRetries(settings.maxRetries);
     const namingTemplate = this.validateNamingTemplate(settings.namingTemplate);
     const proxyUrl = this.validateProxyUrl(settings.proxyUrl);
-    return { downloadPath, maxConcurrent, maxRetries, namingTemplate, proxyUrl };
+    const gentleMode = this.validateGentleMode(settings.gentleMode);
+    const gentleRateLimitMbps = this.validateGentleRateLimitMbps(settings.gentleRateLimitMbps);
+    const gentleCooldownSeconds = this.validateGentleCooldownSeconds(settings.gentleCooldownSeconds);
+    const gentleBatchLimit = this.validateGentleBatchLimit(settings.gentleBatchLimit);
+    return {
+      downloadPath,
+      maxConcurrent,
+      maxRetries,
+      namingTemplate,
+      proxyUrl,
+      gentleMode,
+      gentleRateLimitMbps,
+      gentleCooldownSeconds,
+      gentleBatchLimit,
+    };
+  }
+
+  private validateGentleMode(value: unknown): boolean {
+    if (typeof value !== 'boolean') {
+      throw new AppError('INVALID_PARAM', '温和下载模式开关必须是布尔值');
+    }
+    return value;
+  }
+
+  private validateGentleRateLimitMbps(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 10) {
+      throw new AppError('INVALID_PARAM', '温和模式限速必须是 1 到 10 之间的整数');
+    }
+    return value;
+  }
+
+  private validateGentleCooldownSeconds(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 10 || value > 300) {
+      throw new AppError('INVALID_PARAM', '温和模式冷却时间必须是 10 到 300 之间的整数');
+    }
+    return value;
+  }
+
+  private validateGentleBatchLimit(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 50) {
+      throw new AppError('INVALID_PARAM', '温和模式批量上限必须是 1 到 50 之间的整数');
+    }
+    return value;
   }
 
   private validateDownloadPath(value: unknown): string {

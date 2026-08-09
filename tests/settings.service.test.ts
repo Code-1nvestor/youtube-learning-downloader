@@ -37,12 +37,20 @@ test('persists application settings and reloads them after restart', () => {
       maxRetries: 3,
       namingTemplate: '{course}/{num}_{title}.{ext}',
       proxyUrl: 'http://127.0.0.1:7890',
+      gentleMode: false,
+      gentleRateLimitMbps: 4,
+      gentleCooldownSeconds: 60,
+      gentleBatchLimit: 10,
     });
     assert.equal(updated.persistent, true);
     assert.equal(updated.maxConcurrent, 4);
     assert.equal(updated.maxRetries, 3);
     assert.equal(updated.downloadPath, path.resolve(customDownloadPath));
     assert.equal(fs.existsSync(customDownloadPath), true);
+    assert.equal(updated.gentleMode, false);
+    assert.equal(updated.gentleRateLimitMbps, 4);
+    assert.equal(updated.gentleCooldownSeconds, 60);
+    assert.equal(updated.gentleBatchLimit, 10);
 
     db.close();
     db = initDatabase(dbPath);
@@ -62,6 +70,10 @@ test('persists application settings and reloads them after restart', () => {
     assert.equal(restored.maxRetries, 3);
     assert.equal(restored.namingTemplate, '{course}/{num}_{title}.{ext}');
     assert.equal(restored.proxyUrl, 'http://127.0.0.1:7890');
+    assert.equal(restored.gentleMode, false);
+    assert.equal(restored.gentleRateLimitMbps, 4);
+    assert.equal(restored.gentleCooldownSeconds, 60);
+    assert.equal(restored.gentleBatchLimit, 10);
   } finally {
     db?.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -84,6 +96,12 @@ test('rejects unsafe or invalid application settings', () => {
     assert.throws(() => service.update({ maxConcurrent: 9 }), assertAppError('INVALID_PARAM'));
     assert.throws(() => service.update({ maxRetries: -1 }), assertAppError('INVALID_PARAM'));
     assert.throws(() => service.update({ maxRetries: 6 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ gentleRateLimitMbps: 0 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ gentleRateLimitMbps: 11 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ gentleCooldownSeconds: 9 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ gentleCooldownSeconds: 301 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ gentleBatchLimit: 0 }), assertAppError('INVALID_PARAM'));
+    assert.throws(() => service.update({ gentleBatchLimit: 51 }), assertAppError('INVALID_PARAM'));
     assert.throws(
       () => service.update({ namingTemplate: '../outside/{title}.{ext}' }),
       assertAppError('PATH_NOT_ALLOWED'),

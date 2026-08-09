@@ -52,6 +52,10 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     maxRetries: 2,
     namingTemplate: 'integration/{title}.{ext}',
     proxyUrl: '',
+    gentleMode: false,
+    gentleRateLimitMbps: 2,
+    gentleCooldownSeconds: 10,
+    gentleBatchLimit: 20,
   }, db);
 
   const fakeYtDlp = {

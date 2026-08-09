@@ -146,6 +146,18 @@ function TaskItem({
             {task.nextRetryAt ? `，预计 ${new Date(task.nextRetryAt).toLocaleTimeString('zh-CN')} 再试` : ''}
           </p>
         )}
+        {task.status === 'paused' && (task.errorCode === 'RATE_LIMITED' || task.errorCode === 'COOKIE_ERROR') && (
+          <div className="mt-1 rounded bg-amber-50 dark:bg-amber-950/30 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+            <p>已触发保护：后续任务已暂停。请检查 Cookie、网络状态并等待后手动恢复（风控解除后再逐个恢复）。</p>
+            <button
+              type="button"
+              onClick={() => openSettings('cookie')}
+              className="mt-0.5 text-primary-600 dark:text-primary-400 hover:underline"
+            >
+              去设置检查 Cookie
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 操作按钮 */}

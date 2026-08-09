@@ -24,6 +24,7 @@ import { getYtDlpNetworkArgs } from '../core/yt-dlp-network.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CookieArg } from '../types/auth.ts';
+import type { GentleSettings } from '../types/settings.ts';
 import type { DownloadTask, ProgressInfo } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
 
@@ -47,6 +48,7 @@ export interface DownloadServiceOptions {
   getCookieArg?: () => CookieArg | undefined;
   /** 代理地址提供者（可选，运行时动态读取） */
   getProxyUrl?: () => string | undefined;
+  getGentleSettings?: () => GentleSettings;
   /** 测试或特殊环境可覆盖磁盘可用空间读取；null 表示无法判断。 */
   getAvailableDiskBytes?: (targetPath: string) => number | null;
   /** 每个任务的下载分片与合并中间文件根目录。 */
@@ -58,6 +60,7 @@ export class DownloadService {
   private readonly ffmpegBinary?: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
+  private readonly getGentleSettings?: () => GentleSettings;
   private readonly getAvailableDiskBytes: (targetPath: string) => number | null;
   private readonly tempRootPath: string;
 
@@ -66,6 +69,7 @@ export class DownloadService {
     this.ffmpegBinary = options.ffmpegBinary;
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
+    this.getGentleSettings = options.getGentleSettings;
     this.getAvailableDiskBytes = options.getAvailableDiskBytes ?? readAvailableDiskBytes;
     this.tempRootPath = path.resolve(options.tempRootPath);
   }
@@ -244,6 +248,13 @@ export class DownloadService {
     // 抑制非必要输出
     args.push('--no-warnings');
     args.push('--no-playlist');
+
+    const gentle = this.getGentleSettings?.();
+    if (gentle?.gentleMode) {
+      args.push('--limit-rate', `${gentle.gentleRateLimitMbps}M`);
+      args.push('--concurrent-fragments', '1');
+      args.push('--sleep-requests', '1');
+    }
 
     // 注入代理与 Cookie 参数（在 URL 之前）
     args.push(...getYtDlpNetworkArgs(this.getProxyUrl, this.getCookieArg));

@@ -47,6 +47,7 @@ import type {
   RenamedDownload,
 } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
+import { DEFAULT_GENTLE_SETTINGS } from '../types/settings.ts';
 
 export interface QueueServiceOptions {
   /** 最大并发下载数 */
@@ -57,9 +58,14 @@ export interface QueueServiceOptions {
   namingTemplate: string;
   /** 新任务的最大自动重试次数 */
   maxRetries: number;
+  gentleMode?: boolean;
+  gentleRateLimitMbps?: number;
+  gentleCooldownSeconds?: number;
+  gentleBatchLimit?: number;
 }
 
 const RETRYABLE_ERROR_CODES = new Set(['NETWORK_ERROR', 'TIMEOUT']);
+const PROTECTIVE_ERROR_CODES = new Set(['RATE_LIMITED', 'COOKIE_ERROR']);
 const DUPLICATE_BLOCKING_STATUSES = new Set<DownloadTask['status']>([
   'queued',
   'downloading',
@@ -92,6 +98,9 @@ export class QueueService {
   private readonly db: DbContext | null;
   private activeCount = 0;
   private readonly retryDelayCalculator: (retryCount: number) => number;
+  private gentleCooldownDeadline = 0;
+  private gentleCooldownTimer: ReturnType<typeof setTimeout> | undefined;
+  private shuttingDown = false;
 
   constructor(
     downloadService: DownloadService,
@@ -102,15 +111,37 @@ export class QueueService {
   ) {
     this.downloadService = downloadService;
     this.namingService = namingService;
-    this.options = { ...options, downloadPath: path.resolve(options.downloadPath) };
+    this.options = {
+      ...options,
+      downloadPath: path.resolve(options.downloadPath),
+    };
     this.db = db;
     this.retryDelayCalculator = retryDelayCalculator;
   }
 
   /** 后续新任务使用新设置；已运行任务不被强制中断。 */
   updateOptions(options: QueueServiceOptions): void {
-    this.options = { ...options, downloadPath: path.resolve(options.downloadPath) };
+    const previousGentleMode = this.options.gentleMode === true;
+    this.options = {
+      ...this.options,
+      ...options,
+      downloadPath: path.resolve(options.downloadPath),
+    };
+    if (previousGentleMode && !this.options.gentleMode) {
+      this.clearGentleCooldown();
+    }
     this.tryStartNext();
+  }
+
+  shutdown(): void {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    this.clearGentleCooldown();
+    for (const id of this.retryTimers.keys()) this.clearRetryTimer(id);
+  }
+
+  dispose(): void {
+    this.shutdown();
   }
 
   // ------------------------------------------
@@ -207,6 +238,12 @@ export class QueueService {
     inputs: CreateDownloadTaskInput[],
     conflictPolicy: DownloadConflictPolicy = 'reject',
   ): CreateDownloadResponse {
+    if (this.options.gentleMode && inputs.length > this.gentleBatchLimit()) {
+      throw new AppError(
+        'INVALID_PARAM',
+        `温和下载模式一次最多添加 ${this.gentleBatchLimit()} 个任务，请分批提交。单个任务不受此限制`,
+      );
+    }
     const taskIds: string[] = [];
     const now = new Date().toISOString();
     const date = now.slice(0, 10);
@@ -476,6 +513,7 @@ export class QueueService {
     this.downloadService.cleanupTaskTempArtifacts?.(task);
     this.tasks.delete(id);
     this.deleteTaskFromDb(id);
+    this.tryStartNext();
   }
 
   /** 清空历史时同步移除内存中的终态任务，防止界面出现幽灵记录。 */
@@ -502,7 +540,23 @@ export class QueueService {
 
   /** 尝试启动队列中等待的任务（受并发数限制） */
   private tryStartNext(): void {
-    while (this.activeCount < this.options.maxConcurrent) {
+    if (this.shuttingDown) return;
+    const firstQueued = this.findNextQueued();
+    if (!firstQueued) {
+      this.clearGentleCooldownTimer();
+      return;
+    }
+    if (this.options.gentleMode) {
+      const remaining = this.gentleCooldownDeadline - Date.now();
+      if (remaining > 0) {
+        this.armGentleCooldownTimer(remaining);
+        return;
+      }
+      this.gentleCooldownDeadline = 0;
+      this.clearGentleCooldownTimer();
+    }
+
+    while (this.activeCount < this.effectiveMaxConcurrent()) {
       // 找到最早入队的 queued 任务
       const nextTask = this.findNextQueued();
       if (!nextTask) break;
@@ -582,7 +636,15 @@ export class QueueService {
           this.downloadService.discardTaskArtifacts?.(task);
         }
       } else if (err instanceof AppError) {
-        if (RETRYABLE_ERROR_CODES.has(err.code) && task.retryCount < task.maxRetries) {
+        if (this.options.gentleMode && PROTECTIVE_ERROR_CODES.has(err.code)) {
+          task.status = 'failed';
+          task.error = err.message;
+          task.errorCode = err.code;
+          task.nextRetryAt = undefined;
+          this.persistTask(task);
+          this.pauseTasksAfterProtection(err);
+          console.error(`[queue] 触发保护性错误，已暂停后续任务: ${task.title} - ${err.message}`);
+        } else if (RETRYABLE_ERROR_CODES.has(err.code) && task.retryCount < task.maxRetries) {
           this.scheduleRetry(task, err);
         } else {
           task.status = 'failed';
@@ -603,6 +665,9 @@ export class QueueService {
       this.controllers.delete(task.id);
       // 统一在执行流程结束时释放并发槽位，避免 pause()/cancel() 重复扣减。
       this.activeCount--;
+      if (this.options.gentleMode && !controller.signal.aborted) {
+        this.gentleCooldownDeadline = Date.now() + this.gentleCooldownSeconds() * 1_000;
+      }
       // 任务结束，尝试启动下一个
       this.tryStartNext();
     }
@@ -646,6 +711,53 @@ export class QueueService {
     if (!timer) return;
     clearTimeout(timer);
     this.retryTimers.delete(id);
+  }
+
+  private pauseTasksAfterProtection(error: AppError): void {
+    for (const current of this.tasks.values()) {
+      if (current.status !== 'queued' && current.status !== 'retrying') continue;
+      this.clearRetryTimer(current.id);
+      current.status = 'paused';
+      current.speed = '';
+      current.eta = '';
+      current.nextRetryAt = undefined;
+      current.errorCode = error.code;
+      current.error = `${error.message}；后续任务已暂停，请处理后逐个恢复。`;
+      this.persistTask(current);
+    }
+  }
+
+  private effectiveMaxConcurrent(): number {
+    return this.options.gentleMode ? 1 : this.options.maxConcurrent;
+  }
+
+  private gentleBatchLimit(): number {
+    return this.options.gentleBatchLimit ?? DEFAULT_GENTLE_SETTINGS.gentleBatchLimit;
+  }
+
+  private gentleCooldownSeconds(): number {
+    return this.options.gentleCooldownSeconds ?? DEFAULT_GENTLE_SETTINGS.gentleCooldownSeconds;
+  }
+
+  private armGentleCooldownTimer(delayMs: number): void {
+    if (this.gentleCooldownTimer) return;
+    const timer = setTimeout(() => {
+      this.gentleCooldownTimer = undefined;
+      this.tryStartNext();
+    }, Math.max(delayMs, 0));
+    timer.unref?.();
+    this.gentleCooldownTimer = timer;
+  }
+
+  private clearGentleCooldownTimer(): void {
+    if (!this.gentleCooldownTimer) return;
+    clearTimeout(this.gentleCooldownTimer);
+    this.gentleCooldownTimer = undefined;
+  }
+
+  private clearGentleCooldown(): void {
+    this.gentleCooldownDeadline = 0;
+    this.clearGentleCooldownTimer();
   }
 
   // ------------------------------------------

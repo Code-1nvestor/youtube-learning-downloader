@@ -27,6 +27,7 @@ import {
   parseSubtitleLanguages,
 } from '../utils/subtitles';
 import { getErrorGuidance } from '../utils/error-actions';
+import { getGentleBatchLimit, isGentleBatchAllowed } from '../utils/gentle-mode';
 
 export function Home() {
   const { resolveResult, resolving, error, setResolving, setResolveResult, setError, setView, openSettings, notify } =
@@ -477,8 +478,28 @@ function MultiVideoDownload({
   const [subtitleLangs, setSubtitleLangs] = useState('zh-Hans,en');
   const [autoSubtitle, setAutoSubtitle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { notify } = useStore();
+  const [gentleMode, setGentleMode] = useState(true);
+  const [gentleBatchLimit, setGentleBatchLimit] = useState(20);
+  const { notify, openSettings } = useStore();
   const audioOnly = isAudioContainer(container);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setGentleMode(settings.gentleMode);
+        setGentleBatchLimit(getGentleBatchLimit(settings));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGentleMode(true);
+        setGentleBatchLimit(20);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (audioOnly && subtitleMode === 'embed') {
@@ -506,6 +527,10 @@ function MultiVideoDownload({
     if (selectedIndices.some((index) => index < 0 || index >= videos.length)) {
       setSelected(new Set(videos.map((_, index) => index)));
       notify('解析结果已更新，已重置视频选择，请确认后再下载');
+      return;
+    }
+    if (!isGentleBatchAllowed(selectedIndices.length, { gentleMode, gentleBatchLimit })) {
+      notify(`温和下载模式一次最多提交 ${gentleBatchLimit} 个任务，请分批选择；可在设置中调整上限。`);
       return;
     }
 
@@ -649,6 +674,14 @@ function MultiVideoDownload({
             没有人工字幕时，也尝试下载自动生成字幕
           </label>
         )}
+        <div className="flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <span>{gentleMode ? `温和模式批量上限：${gentleBatchLimit} 个（单视频不受此限制）` : '温和模式已关闭，当前批量不受上限限制'}</span>
+          {gentleMode && (
+            <button type="button" onClick={() => openSettings('download')} className="text-primary-600 dark:text-primary-400 hover:underline">
+              去设置
+            </button>
+          )}
+        </div>
         <button
           onClick={handleBatchDownload}
           disabled={submitting || selected.size === 0}

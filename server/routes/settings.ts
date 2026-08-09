@@ -21,7 +21,17 @@ export function createSettingsRouter(
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       throw new AppError('INVALID_PARAM', '设置请求体必须是 JSON 对象');
     }
-    const allowedKeys = new Set(['downloadPath', 'maxConcurrent', 'maxRetries', 'namingTemplate', 'proxyUrl']);
+    const allowedKeys = new Set([
+      'downloadPath',
+      'maxConcurrent',
+      'maxRetries',
+      'namingTemplate',
+      'proxyUrl',
+      'gentleMode',
+      'gentleRateLimitMbps',
+      'gentleCooldownSeconds',
+      'gentleBatchLimit',
+    ]);
     const unknownKeys = Object.keys(req.body as Record<string, unknown>)
       .filter((key) => !allowedKeys.has(key));
     if (unknownKeys.length > 0) {

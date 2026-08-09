@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { initDatabase } from '../server/db/database.ts';
 import { rowToTask, taskToRow, type TaskRow } from '../server/db/task-serializer.ts';
-import { BackupService } from '../server/services/backup.service.ts';
+import { BackupService, validateBackupDocument } from '../server/services/backup.service.ts';
 import { SettingsService } from '../server/services/settings.service.ts';
 import type { DownloadTask, QueueStatus } from '../server/types/download.ts';
 
@@ -65,12 +65,41 @@ test('exports settings and tasks without Cookie material', () => {
     assert.equal(backup.appVersion, '0.22.0-test');
     assert.equal(backup.cookieIncluded, false);
     assert.equal(backup.data.settings.maxConcurrent, 3);
+    assert.equal(backup.data.settings.gentleMode, true);
+    assert.equal(backup.data.settings.gentleRateLimitMbps, 2);
+    assert.equal(backup.data.settings.gentleCooldownSeconds, 30);
+    assert.equal(backup.data.settings.gentleBatchLimit, 20);
     assert.equal(backup.data.tasks[0]?.id, 'completed-one');
     assert.doesNotMatch(JSON.stringify(backup), /cookie(source|file|browser|content)/i);
   } finally {
     db.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test('accepts legacy backups without gentle settings and fills safe defaults', () => {
+  const legacy = {
+    format: 'youtube-learning-downloader-backup',
+    version: 1,
+    appVersion: '0.10.0-test',
+    exportedAt: '2026-08-01T00:00:00.000Z',
+    cookieIncluded: false,
+    data: {
+      settings: {
+        downloadPath: path.resolve('legacy-downloads'),
+        maxConcurrent: 2,
+        maxRetries: 2,
+        namingTemplate: '{title}.{ext}',
+        proxyUrl: '',
+      },
+      tasks: [],
+    },
+  };
+  const validated = validateBackupDocument(legacy);
+  assert.equal(validated.data.settings.gentleMode, true);
+  assert.equal(validated.data.settings.gentleRateLimitMbps, 2);
+  assert.equal(validated.data.settings.gentleCooldownSeconds, 30);
+  assert.equal(validated.data.settings.gentleBatchLimit, 20);
 });
 
 test('restores atomically and converts runnable backup tasks to paused', () => {
@@ -95,6 +124,10 @@ test('restores atomically and converts runnable backup tasks to paused', () => {
     });
     const backup = service.createBackup();
     backup.data.settings.maxRetries = 4;
+    backup.data.settings.gentleMode = false;
+    backup.data.settings.gentleRateLimitMbps = 4;
+    backup.data.settings.gentleCooldownSeconds = 60;
+    backup.data.settings.gentleBatchLimit = 10;
     backup.data.tasks = [
       makeTask(downloadPath, 'finished', 'completed'),
       makeTask(downloadPath, 'was-running', 'downloading'),
@@ -118,6 +151,14 @@ test('restores atomically and converts runnable backup tasks to paused', () => {
     assert.equal(db.stmts.getTaskById.get('old-task'), undefined);
     const savedRetries = db.db.prepare("SELECT value FROM app_settings WHERE key = 'maxRetries'").get() as { value: string };
     assert.equal(JSON.parse(savedRetries.value), 4);
+    const savedGentleRows = db.db.prepare(
+      "SELECT key, value FROM app_settings WHERE key IN ('gentleMode', 'gentleRateLimitMbps', 'gentleCooldownSeconds', 'gentleBatchLimit')",
+    ).all() as Array<{ key: string; value: string }>;
+    const savedGentle = new Map(savedGentleRows.map((row) => [row.key, JSON.parse(row.value)]));
+    assert.equal(savedGentle.get('gentleMode'), false);
+    assert.equal(savedGentle.get('gentleRateLimitMbps'), 4);
+    assert.equal(savedGentle.get('gentleCooldownSeconds'), 60);
+    assert.equal(savedGentle.get('gentleBatchLimit'), 10);
   } finally {
     db.close();
     fs.rmSync(tempDir, { recursive: true, force: true });

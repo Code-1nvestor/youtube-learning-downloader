@@ -185,11 +185,15 @@ export interface AppSettingsStatus {
   maxRetries: number;
   namingTemplate: string;
   proxyUrl: string;
+  gentleMode: boolean;
+  gentleRateLimitMbps: number;
+  gentleCooldownSeconds: number;
+  gentleBatchLimit: number;
   persistent: boolean;
 }
 
 export type UpdateAppSettingsInput = Partial<
-  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'maxRetries' | 'namingTemplate' | 'proxyUrl'>
+  Pick<AppSettingsStatus, 'downloadPath' | 'maxConcurrent' | 'maxRetries' | 'namingTemplate' | 'proxyUrl' | 'gentleMode' | 'gentleRateLimitMbps' | 'gentleCooldownSeconds' | 'gentleBatchLimit'>
 >;
 
 export interface ConnectivityStatus {

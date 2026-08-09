@@ -73,6 +73,42 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
   ]);
 });
 
+test('adds gentle download limits only while gentle mode is enabled', () => {
+  const gentleSettings = {
+    gentleMode: true,
+    gentleRateLimitMbps: 3,
+    gentleCooldownSeconds: 30,
+    gentleBatchLimit: 20,
+  };
+  const gentle = new DownloadService({
+    binary: 'yt-dlp',
+    tempRootPath: TEST_TEMP_ROOT,
+    getGentleSettings: () => gentleSettings,
+  });
+  const gentleArgs = gentle.buildDownloadArgs(createTask());
+  assert.deepEqual(gentleArgs.slice(gentleArgs.indexOf('--limit-rate'), gentleArgs.indexOf('--limit-rate') + 6), [
+    '--limit-rate',
+    '3M',
+    '--concurrent-fragments',
+    '1',
+    '--sleep-requests',
+    '1',
+  ]);
+  assert.equal(gentleArgs.includes('--limit-rate'), true);
+  assert.equal(gentleArgs.includes('--concurrent-fragments'), true);
+  assert.equal(gentleArgs.includes('--sleep-requests'), true);
+
+  const normal = new DownloadService({
+    binary: 'yt-dlp',
+    tempRootPath: TEST_TEMP_ROOT,
+    getGentleSettings: () => ({ ...gentleSettings, gentleMode: false }),
+  });
+  const normalArgs = normal.buildDownloadArgs(createTask());
+  assert.equal(normalArgs.includes('--limit-rate'), false);
+  assert.equal(normalArgs.includes('--concurrent-fragments'), false);
+  assert.equal(normalArgs.includes('--sleep-requests'), false);
+});
+
 test('blocks a download before launch when disk space is insufficient', () => {
   const estimatedBytes = 400 * 1024 * 1024;
   const service = new DownloadService({
