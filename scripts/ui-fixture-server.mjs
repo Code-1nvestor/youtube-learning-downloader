@@ -36,6 +36,10 @@ let fixtureSettings = {
   maxRetries: 2,
   namingTemplate: '{course}/{date}_{num}_{title}.{ext}',
   proxyUrl: '',
+  gentleMode: true,
+  gentleRateLimitMbps: 2,
+  gentleCooldownSeconds: 30,
+  gentleBatchLimit: 20,
   persistent: true,
 };
 
