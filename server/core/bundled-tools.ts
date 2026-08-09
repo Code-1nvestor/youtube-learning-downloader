@@ -3,7 +3,7 @@ import path from 'node:path';
 
 /** Prefer bundled tools for desktop builds, then fall back to PATH. */
 export function resolveToolBinary(
-  toolName: 'yt-dlp' | 'ffmpeg',
+  toolName: 'yt-dlp' | 'ffmpeg' | 'deno',
   configured: string | undefined,
   baseDir = process.cwd(),
   appDataDir?: string,

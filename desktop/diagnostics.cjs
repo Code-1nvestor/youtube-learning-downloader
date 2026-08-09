@@ -101,6 +101,7 @@ function buildDiagnosticReport({
   redactionPaths = [],
 }) {
   const ytDlp = health?.runtime?.ytDlp;
+  const deno = health?.runtime?.deno;
   const ffmpeg = health?.runtime?.ffmpeg;
   const sanitizedLog = redactDiagnosticText(logText, redactionPaths).trim();
   const cookieSource = cookie?.source === 'browser'
@@ -124,6 +125,8 @@ function buildDiagnosticReport({
     `后端状态: ${safeValue(health?.status)}`,
     `yt-dlp 可用: ${yesNo(ytDlp?.available)}`,
     `yt-dlp 版本: ${safeValue(ytDlp?.version, ytDlp?.message ?? '未知')}`,
+    `Deno 可用: ${yesNo(deno?.available)}`,
+    `Deno 版本: ${safeValue(deno?.version, deno?.message ?? '未知')}`,
     `ffmpeg 可用: ${yesNo(ffmpeg?.available)}`,
     `ffmpeg 版本: ${safeValue(ffmpeg?.version, ffmpeg?.message ?? '未知')}`,
     '',

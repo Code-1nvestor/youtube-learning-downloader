@@ -17,6 +17,8 @@ export interface AppConfig {
   port: number;
   /** yt-dlp 可执行文件名或绝对路径 */
   ytDlpBinary: string;
+  /** Deno executable used by yt-dlp to solve YouTube JavaScript challenges. */
+  denoBinary: string;
   /** ffmpeg 可执行文件名或绝对路径（Phase 3 暂不强制检测） */
   ffmpegBinary: string;
   /** 单次解析超时（毫秒） */
@@ -46,6 +48,7 @@ export interface AppConfig {
 const DEFAULTS: AppConfig = {
   port: 3000,
   ytDlpBinary: 'yt-dlp',
+  denoBinary: 'deno',
   ffmpegBinary: 'ffmpeg',
   resolveTimeoutMs: 60_000,
   downloadPath: '',
@@ -87,6 +90,11 @@ export function loadConfig(): AppConfig {
       process.env.YT_DLP_BINARY ?? DEFAULTS.ytDlpBinary,
       resourcePath,
       appDataPath,
+    ),
+    denoBinary: resolveToolBinary(
+      'deno',
+      process.env.DENO_BINARY ?? DEFAULTS.denoBinary,
+      resourcePath,
     ),
     ffmpegBinary: resolveToolBinary(
       'ffmpeg',

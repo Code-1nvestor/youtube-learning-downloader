@@ -26,6 +26,7 @@ import { runProcess, BinaryNotFoundError } from './process.ts';
 import { classifyQuery } from './url-classifier.ts';
 import { translateYtDlpError } from './yt-dlp-errors.ts';
 import { injectYtDlpNetworkArgs } from './yt-dlp-network.ts';
+import { getYtDlpRuntimeArgs } from './yt-dlp-runtime.ts';
 import { AppError } from '../types/errors.ts';
 import type { CookieArg } from '../types/auth.ts';
 import type { GentleSettings } from '../types/settings.ts';
@@ -44,6 +45,8 @@ import type {
 export interface YtDlpServiceOptions {
   /** yt-dlp 可执行文件名或路径（默认 "yt-dlp"，从 PATH 解析） */
   binary?: string;
+  /** Deno executable used by yt-dlp's YouTube EJS challenge solver. */
+  denoBinary?: string;
   /** 单次解析超时（毫秒），大播放列表建议 ≥ 60s */
   timeoutMs?: number;
   /** Cookie 参数提供者（可选，运行时动态读取） */
@@ -54,7 +57,7 @@ export interface YtDlpServiceOptions {
   getGentleSettings?: () => GentleSettings;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'getCookieArg' | 'getProxyUrl' | 'getGentleSettings'>> = {
+const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'denoBinary' | 'getCookieArg' | 'getProxyUrl' | 'getGentleSettings'>> = {
   binary: 'yt-dlp',
   timeoutMs: 60_000,
 };
@@ -117,6 +120,7 @@ interface RawPlaylistJson {
 export class YtDlpService {
   private readonly binary: string;
   private readonly timeoutMs: number;
+  private readonly denoBinary?: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
   private readonly getGentleSettings?: () => GentleSettings;
@@ -124,6 +128,7 @@ export class YtDlpService {
   constructor(options: YtDlpServiceOptions = {}) {
     this.binary = options.binary ?? DEFAULT_OPTIONS.binary;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs;
+    this.denoBinary = options.denoBinary;
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
     this.getGentleSettings = options.getGentleSettings;
@@ -258,6 +263,7 @@ export class YtDlpService {
   /** 构建解析命令参数，供测试和诊断确认温和模式开关。 */
   buildResolveArgs(args: string[]): string[] {
     const finalArgs = injectYtDlpNetworkArgs([...args], this.getProxyUrl, this.getCookieArg);
+    finalArgs.unshift(...getYtDlpRuntimeArgs(this.denoBinary));
     if (this.getGentleSettings?.()?.gentleMode) {
       finalArgs.unshift('--sleep-requests', '1');
     }

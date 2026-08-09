@@ -29,6 +29,7 @@ function diagnosticApiFixture(route: string): Promise<Record<string, unknown>> {
       status: 'ok',
       runtime: {
         ytDlp: { available: true, version: '2026.07.04' },
+        deno: { available: true, version: 'deno 2.9.5' },
         ffmpeg: { available: true, version: 'test-ffmpeg' },
       },
     },
@@ -103,6 +104,7 @@ test('builds a useful whitelist report without copying private settings', () => 
       status: 'ok',
       runtime: {
         ytDlp: { available: true, version: '2026.07.04' },
+        deno: { available: true, version: 'deno 2.9.5' },
         ffmpeg: { available: true, version: 'test-ffmpeg' },
       },
     },
@@ -132,6 +134,8 @@ test('builds a useful whitelist report without copying private settings', () => 
   });
 
   assert.match(report, /版本: 0\.14\.0/);
+  assert.match(report, /Deno 可用: 是/);
+  assert.match(report, /Deno 版本: deno 2\.9\.5/);
   assert.match(report, /下载目录已配置: 是/);
   assert.match(report, /代理已配置: 是/);
   assert.match(report, /来源: 本机 Cookie 文件/);

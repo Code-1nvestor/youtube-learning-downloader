@@ -33,14 +33,15 @@ Electron 桌面版。
 - 下载目录、并发数和命名规则持久化设置
 - PWA、亮色/暗色/跟随系统主题
 - Windows 桌面启动、内置工具自检和安装包配置
+- 桌面版内置 Deno，并显式提供给 yt-dlp 的 YouTube EJS 挑战解析
 - 首次使用准备向导、一键脱敏诊断报告和 yt-dlp 官方 Nightly 安全更新
 
 ## 桌面版第一次使用
 
 普通用户直接运行 `release` 目录中的安装版或便携版，无需安装 Node.js、
-Python、yt-dlp 或 ffmpeg。首次打开会显示“首次使用准备”向导：
+Python、yt-dlp、Deno 或 ffmpeg。首次打开会显示“首次使用准备”向导：
 
-1. 确认下载目录、yt-dlp 和 ffmpeg 均为可用状态；
+1. 确认下载目录、yt-dlp、Deno 和 ffmpeg 均为可用状态；
 2. 点击“测试 YouTube 连接”；该操作只解析官方测试视频，不下载媒体；
 3. Cookie 是按需项，普通公开视频可以先不配置；
 4. 如果 YouTube 提示人机验证，进入“设置 → Cookie 配置”选择本机浏览器；
@@ -101,8 +102,8 @@ Windows 默认程序播放或查看文件；“文件夹”会在文件资源管
 ## 环境要求
 
 - Node.js 22.12 或更高版本
-- 开发环境可使用系统 `yt-dlp` / `ffmpeg`
-- 桌面发布需要把 `yt-dlp.exe`、`ffmpeg.exe`、`ffprobe.exe` 放入
+- 开发环境可使用系统 `yt-dlp` / `deno` / `ffmpeg`
+- 桌面发布需要把 `yt-dlp.exe`、`deno.exe`、`ffmpeg.exe`、`ffprobe.exe` 放入
   `resources/bin`
 
 ## 第一次运行
@@ -128,7 +129,7 @@ npm --prefix client run dev
 
 - 后端窗口显示 `后端已启动: http://localhost:3000`
 - 浏览器打开 `http://localhost:5173`
-- 设置页的运行环境区域能显示 `yt-dlp` 与 `ffmpeg` 状态
+- 设置页的运行环境区域能显示 `yt-dlp`、`Deno` 与 `ffmpeg` 状态
 
 ## 常用命令
 
@@ -157,7 +158,8 @@ npm run test:e2e
 Remove-Item Env:YLD_E2E_LIVE
 ```
 
-该命令只使用 yt-dlp 官方测试视频，并在系统临时目录中完成解析、下载、取消、历史
+该命令只使用 yt-dlp 官方测试视频，并使用 `resources/bin` 内的 yt-dlp、Deno 与 ffmpeg，
+在系统临时目录中完成解析、下载、取消、历史
 记录与重启恢复检查。成功标志是输出 `"ok": true`；如果返回 `RATE_LIMITED`，说明
 当前网络被 YouTube 要求人机验证，应先在桌面版“设置 → Cookie 配置”中完成配置。
 测试脚本不会自动读取浏览器 Cookie。
@@ -165,6 +167,17 @@ Remove-Item Env:YLD_E2E_LIVE
 如果当前网络被 YouTube 要求人机验证，并且设备所有者明确允许测试读取已登录浏览器的
 Cookie，可额外设置 `YLD_E2E_COOKIE_BROWSER` 为 `chrome`、`edge`、`firefox` 或
 `brave` 后重跑。该选项不会导出或打印 Cookie 内容；未经授权不要启用。
+
+安装包验收时可额外设置 `YLD_E2E_PACKAGE_ROOT` 为刚安装完成的应用目录。脚本会直接
+使用该目录中的 Electron 运行时、生产后端、yt-dlp、Deno 和 ffmpeg，不会退回源码环境：
+
+```powershell
+$env:YLD_E2E_PACKAGE_ROOT = 'C:\Path\To\Installed App'
+$env:YLD_E2E_LIVE = '1'
+npm run test:e2e
+Remove-Item Env:YLD_E2E_PACKAGE_ROOT
+Remove-Item Env:YLD_E2E_LIVE
+```
 
 在 YouTube 不可访问时，可用完全离线的 UI 验收数据检查格式和字幕界面：
 
@@ -183,7 +196,7 @@ npm run ui:fixture
 client/          React 前端
 server/          Express API、下载队列和 SQLite
 desktop/         Electron 桌面入口
-resources/bin/   桌面版内置 yt-dlp / ffmpeg（不提交二进制）
+resources/bin/   桌面版内置 yt-dlp / Deno / ffmpeg（不提交二进制）
 scripts/         构建脚本
 tests/           后端单元测试
 dist/            构建产物（不提交）

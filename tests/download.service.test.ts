@@ -39,6 +39,7 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
     binary: 'yt-dlp',
     tempRootPath: TEST_TEMP_ROOT,
     ffmpegBinary: 'C:\\Tools\\ffmpeg.exe',
+    denoBinary: 'C:\\Tools\\deno.exe',
     getCookieArg: () => ({ flag: '--cookies', value: 'C:\\Data\\cookies.txt' }),
     getProxyUrl: () => 'http://127.0.0.1:7890',
   });
@@ -64,6 +65,10 @@ test('builds download arguments with ffmpeg, subtitles, cookies, and a safe vide
   assert.ok(args.includes('--write-subs'));
   assert.ok(args.includes('--write-auto-subs'));
   assert.ok(args.includes('--convert-subs'));
+  assert.deepEqual(args.slice(args.indexOf('--js-runtimes'), args.indexOf('--js-runtimes') + 2), [
+    '--js-runtimes',
+    'deno:C:\\Tools\\deno.exe',
+  ]);
   assert.deepEqual(args.slice(-5), [
     '--proxy',
     'http://127.0.0.1:7890',

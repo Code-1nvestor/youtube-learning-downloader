@@ -30,6 +30,7 @@ import {
 } from '../core/process.ts';
 import { AppError } from '../types/errors.ts';
 import { getYtDlpNetworkArgs } from '../core/yt-dlp-network.ts';
+import { getYtDlpRuntimeArgs } from '../core/yt-dlp-runtime.ts';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -41,6 +42,8 @@ import { translateYtDlpError } from '../core/yt-dlp-errors.ts';
 export interface SubtitleServiceOptions {
   binary: string;
   ffmpegBinary?: string;
+  /** Deno executable used by yt-dlp's YouTube EJS challenge solver. */
+  denoBinary?: string;
   /** 字幕输出只能落在该目录内。 */
   outputRoot: string;
   getCookieArg?: () => CookieArg | undefined;
@@ -57,6 +60,7 @@ type ProcessRunner = (
 export class SubtitleService {
   private readonly binary: string;
   private readonly ffmpegBinary?: string;
+  private readonly denoBinary?: string;
   private outputRoot: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
@@ -67,6 +71,7 @@ export class SubtitleService {
     this.ytDlpService = ytDlpService;
     this.binary = options.binary;
     this.ffmpegBinary = options.ffmpegBinary;
+    this.denoBinary = options.denoBinary;
     this.outputRoot = path.resolve(options.outputRoot);
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
@@ -217,6 +222,7 @@ export class SubtitleService {
         args.push('--ffmpeg-location', this.ffmpegBinary);
       }
 
+      args.push(...getYtDlpRuntimeArgs(this.denoBinary));
       args.push(...getYtDlpNetworkArgs(this.getProxyUrl, this.getCookieArg));
       args.push(`https://www.youtube.com/watch?v=${videoId}`);
 

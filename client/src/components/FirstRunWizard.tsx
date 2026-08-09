@@ -59,6 +59,7 @@ export function FirstRunWizard({
   const localReady = Boolean(
     data?.settings.downloadPath &&
     data.health.runtime.ytDlp.available &&
+    data.health.runtime.deno.available &&
     data.health.runtime.ffmpeg.available,
   );
   const requiredReady = localReady && connectivity?.ok === true;
@@ -105,6 +106,7 @@ export function FirstRunWizard({
           <div className="mt-5 space-y-2">
             <ReadinessRow ready={Boolean(data.settings.downloadPath)} title="下载目录" detail={data.settings.downloadPath} />
             <ReadinessRow ready={data.health.runtime.ytDlp.available} title="yt-dlp 下载核心" detail={data.health.runtime.ytDlp.version ?? data.health.runtime.ytDlp.message ?? '不可用'} />
+            <ReadinessRow ready={data.health.runtime.deno.available} title="Deno（YouTube 格式解析）" detail={data.health.runtime.deno.version ?? data.health.runtime.deno.message ?? '不可用'} />
             <ReadinessRow ready={data.health.runtime.ffmpeg.available} title="ffmpeg 音视频处理" detail={data.health.runtime.ffmpeg.version ?? data.health.runtime.ffmpeg.message ?? '不可用'} />
             <ReadinessRow
               ready={connectivity?.ok === true}

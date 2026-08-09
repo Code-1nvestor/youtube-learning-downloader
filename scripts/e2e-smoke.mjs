@@ -7,6 +7,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const packageRoot = process.env.YLD_E2E_PACKAGE_ROOT?.trim()
+  ? path.resolve(process.env.YLD_E2E_PACKAGE_ROOT.trim())
+  : null;
+const runtimeRoot = packageRoot ? path.join(packageRoot, 'resources') : root;
 const liveEnabled = process.env.YLD_E2E_LIVE === '1';
 const keepArtifacts = process.env.YLD_E2E_KEEP === '1';
 const cookieBrowser = process.env.YLD_E2E_COOKIE_BROWSER?.trim().toLowerCase() ?? '';
@@ -57,26 +61,39 @@ async function getAvailablePort() {
 }
 
 async function startServer(port) {
+  const runtimeBinary = packageRoot
+    ? path.join(packageRoot, '学习资料下载器.exe')
+    : process.execPath;
+  const serverArgs = packageRoot
+    ? [
+        '--experimental-sqlite',
+        path.join(runtimeRoot, 'server', 'index.cjs'),
+      ]
+    : [
+        '--experimental-sqlite',
+        path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+        path.join(root, 'server', 'index.ts'),
+      ];
   const child = spawn(
-    process.execPath,
-    [
-      '--experimental-sqlite',
-      path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
-      path.join(root, 'server', 'index.ts'),
-    ],
+    runtimeBinary,
+    serverArgs,
     {
       cwd: root,
       env: {
         ...process.env,
+        ...(packageRoot ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         NODE_ENV: 'production',
         PORT: String(port),
         APP_DATA_PATH: tempDir,
-        APP_RESOURCE_PATH: root,
+        APP_RESOURCE_PATH: runtimeRoot,
         DOWNLOAD_PATH: downloadDir,
         DB_PATH: databasePath,
-        WEB_DIST_PATH: path.join(root, 'dist', 'client'),
-        YT_DLP_BINARY: path.join(root, 'resources', 'bin', 'yt-dlp.exe'),
-        FFMPEG_BINARY: path.join(root, 'resources', 'bin', 'ffmpeg.exe'),
+        WEB_DIST_PATH: packageRoot
+          ? path.join(runtimeRoot, 'client')
+          : path.join(root, 'dist', 'client'),
+        YT_DLP_BINARY: path.join(runtimeRoot, 'bin', 'yt-dlp.exe'),
+        DENO_BINARY: path.join(runtimeRoot, 'bin', 'deno.exe'),
+        FFMPEG_BINARY: path.join(runtimeRoot, 'bin', 'ffmpeg.exe'),
         MAX_CONCURRENT: '1',
         NAMING_TEMPLATE: 'e2e/{title}.{ext}',
       },
@@ -159,6 +176,10 @@ try {
   const baseUrl = `http://127.0.0.1:${port}`;
   serverProcess = await startServer(port);
   await waitForHealth(baseUrl);
+  const health = await apiRequest(baseUrl, '/api/health');
+  if (!health.runtime?.deno?.available) {
+    throw new Error(`Deno runtime is unavailable: ${health.runtime?.deno?.message ?? 'unknown error'}`);
+  }
 
   if (cookieBrowser) {
     await apiRequest(baseUrl, '/api/auth/cookie/browser', {
@@ -242,6 +263,7 @@ try {
     statusSequence: completedResult.statuses,
     cancelledStatus: cancelledTask.status,
     historyCountAfterRestart: historyAfterRestart.total,
+    packageRoot: packageRoot ?? undefined,
     tempDir: keepArtifacts ? tempDir : undefined,
   }, null, 2));
 } catch (error) {

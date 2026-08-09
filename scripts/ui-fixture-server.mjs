@@ -117,6 +117,7 @@ app.get('/api/health', (_request, response) => {
       uptime: process.uptime(),
       runtime: {
         ytDlp: { available: true, version: 'fixture' },
+        deno: { available: true, version: 'fixture' },
         ffmpeg: { available: true, version: 'fixture' },
       },
     },

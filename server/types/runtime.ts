@@ -6,6 +6,7 @@ export interface RuntimeToolStatus {
 
 export interface RuntimeStatus {
   ytDlp: RuntimeToolStatus;
+  deno: RuntimeToolStatus;
   ffmpeg: RuntimeToolStatus;
 }
 

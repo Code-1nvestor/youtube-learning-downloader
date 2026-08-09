@@ -10,15 +10,33 @@ const settings = {
 };
 
 test('adds sleep requests to resolve commands only when gentle mode is enabled', () => {
-  const gentle = new YtDlpService({ getGentleSettings: () => settings });
+  const gentle = new YtDlpService({
+    denoBinary: 'C:\\Tools\\deno.exe',
+    getGentleSettings: () => settings,
+  });
   assert.deepEqual(
     gentle.buildResolveArgs(['--dump-json', 'https://example.test/video']),
-    ['--sleep-requests', '1', '--dump-json', 'https://example.test/video'],
+    [
+      '--sleep-requests',
+      '1',
+      '--js-runtimes',
+      'deno:C:\\Tools\\deno.exe',
+      '--dump-json',
+      'https://example.test/video',
+    ],
   );
 
   const normal = new YtDlpService({ getGentleSettings: () => ({ ...settings, gentleMode: false }) });
   assert.deepEqual(
     normal.buildResolveArgs(['--dump-json', 'https://example.test/video']),
+    ['--dump-json', 'https://example.test/video'],
+  );
+});
+
+test('does not add a JavaScript runtime argument when Deno is not configured', () => {
+  const service = new YtDlpService();
+  assert.deepEqual(
+    service.buildResolveArgs(['--dump-json', 'https://example.test/video']),
     ['--dump-json', 'https://example.test/video'],
   );
 });

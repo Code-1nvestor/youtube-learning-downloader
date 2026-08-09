@@ -21,6 +21,7 @@
 import { runProcessStreaming } from '../core/process.ts';
 import { translateDownloadError } from '../core/yt-dlp-errors.ts';
 import { getYtDlpNetworkArgs } from '../core/yt-dlp-network.ts';
+import { getYtDlpRuntimeArgs } from '../core/yt-dlp-runtime.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CookieArg } from '../types/auth.ts';
@@ -44,6 +45,8 @@ export interface DownloadServiceOptions {
   binary: string;
   /** ffmpeg executable or directory, used by packaged builds. */
   ffmpegBinary?: string;
+  /** Deno executable used by yt-dlp's YouTube EJS challenge solver. */
+  denoBinary?: string;
   /** Cookie 参数提供者（可选，运行时动态读取） */
   getCookieArg?: () => CookieArg | undefined;
   /** 代理地址提供者（可选，运行时动态读取） */
@@ -58,6 +61,7 @@ export interface DownloadServiceOptions {
 export class DownloadService {
   private readonly binary: string;
   private readonly ffmpegBinary?: string;
+  private readonly denoBinary?: string;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
   private readonly getGentleSettings?: () => GentleSettings;
@@ -67,6 +71,7 @@ export class DownloadService {
   constructor(options: DownloadServiceOptions) {
     this.binary = options.binary;
     this.ffmpegBinary = options.ffmpegBinary;
+    this.denoBinary = options.denoBinary;
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
     this.getGentleSettings = options.getGentleSettings;
@@ -257,6 +262,7 @@ export class DownloadService {
     }
 
     // 注入代理与 Cookie 参数（在 URL 之前）
+    args.push(...getYtDlpRuntimeArgs(this.denoBinary));
     args.push(...getYtDlpNetworkArgs(this.getProxyUrl, this.getCookieArg));
 
     // 目标 URL

@@ -165,6 +165,7 @@ export interface HealthStatus {
   uptime: number;
   runtime: {
     ytDlp: RuntimeToolStatus;
+    deno: RuntimeToolStatus;
     ffmpeg: RuntimeToolStatus;
   };
 }

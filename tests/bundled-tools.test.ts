@@ -29,6 +29,19 @@ test('falls back to the configured command when no packaged tool exists', () => 
   }
 });
 
+test('resolves a bundled Deno runtime from the desktop resources directory', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-tools-'));
+  const executableName = process.platform === 'win32' ? 'deno.exe' : 'deno';
+  const executablePath = path.join(root, 'bin', executableName);
+  try {
+    fs.mkdirSync(path.dirname(executablePath), { recursive: true });
+    fs.writeFileSync(executablePath, '');
+    assert.equal(resolveToolBinary('deno', 'deno', root), executablePath);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('prefers a user-updated tool over the packaged copy', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-tools-'));
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-app-data-'));

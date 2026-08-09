@@ -106,6 +106,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
   const config: AppConfig = {
     port: 0,
     ytDlpBinary: 'fake-yt-dlp',
+    denoBinary: 'fake-deno',
     ffmpegBinary: 'fake-ffmpeg',
     resolveTimeoutMs: 1_000,
     downloadPath,
@@ -131,6 +132,7 @@ async function createHarness(tempDir: string, databasePath: string): Promise<Har
     connectivity,
     {
       ytDlp: { available: true, version: 'fake' },
+      deno: { available: true, version: 'fake' },
       ffmpeg: { available: true, version: 'fake' },
     },
     backup,

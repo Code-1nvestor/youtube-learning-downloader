@@ -52,6 +52,7 @@ test('downloads subtitles through a temporary SRT file and cleans it afterwards'
   const service = new SubtitleService(ytDlpService, {
     binary: 'fake-yt-dlp',
     ffmpegBinary: 'C:\\Tools\\ffmpeg.exe',
+    denoBinary: 'C:\\Tools\\deno.exe',
     outputRoot: 'C:\\Downloads',
     getProxyUrl: () => 'socks5://127.0.0.1:1080',
     runProcess: async (_command, args) => {
@@ -78,6 +79,10 @@ test('downloads subtitles through a temporary SRT file and cleans it afterwards'
   assert.match(result.content ?? '', /Hello/);
   assert.equal(result.cueCount, 1);
   assert.ok(observedArgs.includes('--ffmpeg-location'));
+  assert.deepEqual(
+    observedArgs.slice(observedArgs.indexOf('--js-runtimes'), observedArgs.indexOf('--js-runtimes') + 2),
+    ['--js-runtimes', 'deno:C:\\Tools\\deno.exe'],
+  );
   assert.deepEqual(observedArgs.slice(-3), [
     '--proxy',
     'socks5://127.0.0.1:1080',

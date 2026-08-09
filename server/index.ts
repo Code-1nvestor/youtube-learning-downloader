@@ -55,6 +55,28 @@ async function checkFfmpeg(binary: string): Promise<RuntimeToolStatus> {
   }
 }
 
+async function checkDeno(binary: string): Promise<RuntimeToolStatus> {
+  try {
+    const result = await runProcess(binary, ['--version'], {
+      timeoutMs: 10_000,
+      maxOutputBytes: 1024 * 1024,
+    });
+    if (result.exitCode !== 0) {
+      return { available: false, message: 'Deno returned an error' };
+    }
+    const firstLine = result.stdout.split(/\r?\n/, 1)[0]?.trim();
+    return { available: true, version: firstLine || 'installed' };
+  } catch (error) {
+    if (error instanceof BinaryNotFoundError) {
+      return { available: false, message: 'Deno was not found; YouTube media formats may be unavailable' };
+    }
+    return {
+      available: false,
+      message: error instanceof Error ? error.message : 'Deno check failed',
+    };
+  }
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
 
@@ -87,6 +109,7 @@ async function main(): Promise<void> {
 
   const ytDlpService = new YtDlpService({
     binary: config.ytDlpBinary,
+    denoBinary: config.denoBinary,
     timeoutMs: config.resolveTimeoutMs,
     getCookieArg: () => cookieService.getArg(),
     getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
@@ -114,11 +137,18 @@ async function main(): Promise<void> {
   } else {
     console.warn(`[startup] 警告: ${ffmpegStatus.message}`);
   }
+  const denoStatus = await checkDeno(config.denoBinary);
+  if (denoStatus.available) {
+    console.log(`[startup] Deno: ${denoStatus.version}`);
+  } else {
+    console.warn(`[startup] Warning: ${denoStatus.message}`);
+  }
 
   // 初始化下载服务链
   const appSettings = settingsService.getSettings();
   const downloadService = new DownloadService({
     binary: config.ytDlpBinary,
+    denoBinary: config.denoBinary,
     ffmpegBinary: config.ffmpegBinary,
     tempRootPath: path.join(config.appDataPath, 'download-cache'),
     getCookieArg: () => cookieService.getArg(),
@@ -153,6 +183,7 @@ async function main(): Promise<void> {
   // 字幕服务（复用 ytDlpService 的解析能力 + cookie 配置）
   const subtitleService = new SubtitleService(ytDlpService, {
     binary: config.ytDlpBinary,
+    denoBinary: config.denoBinary,
     ffmpegBinary: config.ffmpegBinary,
     outputRoot: appSettings.downloadPath,
     getCookieArg: () => cookieService.getArg(),
@@ -190,7 +221,7 @@ async function main(): Promise<void> {
     settingsService,
     toolUpdateService,
     connectivityService,
-    { ytDlp: ytDlpStatus, ffmpeg: ffmpegStatus },
+    { ytDlp: ytDlpStatus, deno: denoStatus, ffmpeg: ffmpegStatus },
     backupService,
     process.env.DESKTOP_API_TOKEN ?? '',
   );
