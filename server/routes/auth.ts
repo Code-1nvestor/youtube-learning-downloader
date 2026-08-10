@@ -14,7 +14,11 @@
 import { Router } from 'express';
 import type { CookieService } from '../services/cookie.service.ts';
 import { asyncHandler } from '../core/utils.ts';
-import type { SetCookieFileRequest, SetCookieBrowserRequest } from '../types/auth.ts';
+import type {
+  ImportCookieSnapshotRequest,
+  SetCookieFileRequest,
+  SetCookieBrowserRequest,
+} from '../types/auth.ts';
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
 
@@ -22,9 +26,9 @@ export function createAuthRouter(cookieService: CookieService): Router {
   const router = Router();
 
   // -- 查询状态 --
-  router.get('/cookie', (_req, res) => {
-    res.json(ok(cookieService.getStatus()));
-  });
+  router.get('/cookie', asyncHandler(async (_req, res) => {
+    res.json(ok(await cookieService.getStatusWithBrowserState()));
+  }));
 
   // -- 从文件配置 --
   router.post(
@@ -36,6 +40,17 @@ export function createAuthRouter(cookieService: CookieService): Router {
       }
       cookieService.setFromFile(body.content);
       res.json(ok(cookieService.getStatus()));
+    }),
+  );
+
+  router.post(
+    '/cookie/snapshot',
+    asyncHandler(async (req, res) => {
+      const body = req.body as ImportCookieSnapshotRequest;
+      if (body?.browser !== 'chrome') {
+        throw new AppError('INVALID_PARAM', '当前快照导入仅支持 Chrome');
+      }
+      res.json(ok(await cookieService.importBrowserSnapshot(body.browser)));
     }),
   );
 

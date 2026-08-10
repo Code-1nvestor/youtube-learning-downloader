@@ -145,6 +145,24 @@ test('builds a useful whitelist report without copying private settings', () => 
   }
 });
 
+test('identifies a Chrome Cookie snapshot without exposing its file', () => {
+  const report = buildDiagnosticReport({
+    appVersion: '0.23.1',
+    generatedAt: '2026-08-10T00:00:00.000Z',
+    platform: 'win32',
+    arch: 'x64',
+    osRelease: 'test-release',
+    health: {},
+    settings: {},
+    cookie: { configured: true, source: 'snapshot', validity: 'valid' },
+    update: {},
+    logText: '',
+  });
+  assert.match(report, /来源: Chrome Cookie 快照/);
+  assert.match(report, /快照状态: valid/);
+  assert.doesNotMatch(report, /chrome-snapshot\.txt/);
+});
+
 test('reads only the requested complete-line tail of a backend log', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-diagnostics-'));
   const logPath = path.join(tempDir, 'backend.log');

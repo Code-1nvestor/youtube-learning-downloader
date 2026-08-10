@@ -26,6 +26,7 @@ export function Settings() {
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [testingCookie, setTestingCookie] = useState(false);
+  const [importingSnapshot, setImportingSnapshot] = useState(false);
   const [cookieConnectivity, setCookieConnectivity] = useState<ConnectivityStatus | null>(null);
 
   // 初始加载 Cookie 状态
@@ -85,11 +86,27 @@ export function Settings() {
     }
   };
 
+  const importChromeSnapshot = async () => {
+    setImportingSnapshot(true);
+    setCookieConnectivity(null);
+    try {
+      const status = await api.importChromeCookieSnapshot();
+      setCookieStatus(status);
+      notify('Chrome Cookie 快照已导入；以后解析和下载不需要一直关闭 Chrome');
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Chrome Cookie 快照导入失败');
+      await refreshStatus();
+    } finally {
+      setImportingSnapshot(false);
+    }
+  };
+
   const testCookieConfiguration = async () => {
     setTestingCookie(true);
     setCookieConnectivity(null);
     try {
       setCookieConnectivity(await api.testConnectivity());
+      await refreshStatus();
     } catch (error) {
       notify(error instanceof ApiError ? error.message : '当前配置测试失败');
     } finally {
@@ -124,8 +141,8 @@ export function Settings() {
         </p>
 
         {/* 当前状态 */}
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 mb-4 flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={cookieStatus} />
             {cookieStatus?.source === 'browser' && (
               <span className="text-sm text-gray-600 dark:text-gray-400">浏览器: {cookieStatus.browser}</span>
@@ -133,7 +150,10 @@ export function Settings() {
             {cookieStatus?.source === 'file' && (
               <span className="text-sm text-gray-600 dark:text-gray-400">文件: {cookieStatus.fileName}</span>
             )}
-            {cookieStatus?.updatedAt && (
+            {cookieStatus?.source === 'snapshot' && (
+              <span className="text-sm text-gray-600 dark:text-gray-400">来源: Chrome 快照</span>
+            )}
+            {cookieStatus?.updatedAt && cookieStatus.source !== 'snapshot' && (
               <span className="text-xs text-gray-400 dark:text-gray-500">
                 更新于 {new Date(cookieStatus.updatedAt).toLocaleString('zh-CN')}
               </span>
@@ -147,17 +167,59 @@ export function Settings() {
           </button>
         </div>
 
+        {/* 推荐：一次性导入 Chrome 快照 */}
+        <div className="mb-4 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-950/20 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">推荐：Chrome Cookie 快照</h3>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                只在导入或刷新时关闭 Chrome；导入后解析和下载使用本机受保护的快照文件。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void importChromeSnapshot()}
+              disabled={loading || testingCookie || importingSnapshot || cookieStatus?.browserRunning === true}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+            >
+              {importingSnapshot
+                ? '正在安全导入…'
+                : cookieStatus?.source === 'snapshot'
+                  ? '关闭 Chrome 并刷新快照'
+                  : '关闭 Chrome 并导入 Cookie 快照'}
+            </button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <p>当前状态：<span className={cookieValidityClass(cookieStatus)}>{cookieValidityLabel(cookieStatus)}</span></p>
+            <p>
+              Chrome：{cookieStatus?.browserRunning === true
+                ? <span className="text-amber-600 dark:text-amber-400">正在运行，请完全关闭后导入</span>
+                : cookieStatus?.browserRunning === false
+                  ? <span className="text-green-600 dark:text-green-400">已关闭，可以导入或刷新</span>
+                  : <span>无法自动判断，请确认已完全关闭</span>}
+            </p>
+            <p>最近导入：{formatCookieTime(cookieStatus?.importedAt)}</p>
+            <p>最近验证：{formatCookieTime(cookieStatus?.lastVerifiedAt)}</p>
+          </div>
+          {cookieStatus?.source === 'snapshot' && (
+            <p className="mt-2 text-xs text-green-700 dark:text-green-400">
+              当前解析与下载使用快照，不再持续读取 Chrome 数据库。Cookie 失效时再关闭 Chrome 刷新一次即可。
+            </p>
+          )}
+        </div>
+
         {/* 浏览器配置 */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            方式一：从浏览器自动读取
+            兼容方式：每次从浏览器直接读取
           </label>
           <div className="flex gap-2">
             {['chrome', 'edge', 'firefox', 'brave'].map((b) => (
               <button
                 key={b}
                 onClick={() => handleBrowserConfig(b)}
-                disabled={loading || testingCookie}
+                disabled={loading || testingCookie || importingSnapshot}
                 className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-40 capitalize"
               >
                 {b}
@@ -165,7 +227,7 @@ export function Settings() {
             ))}
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-            yt-dlp 会直接读取浏览器本地存储的 Cookie（需关闭浏览器）
+            此方式每次解析或下载都可能要求关闭浏览器；Chrome 用户优先使用上面的快照。
           </p>
         </div>
 
@@ -175,7 +237,7 @@ export function Settings() {
             setCookieStatus(status);
             setCookieConnectivity(null);
           }}
-          disabled={loading || testingCookie}
+          disabled={loading || testingCookie || importingSnapshot}
         />
 
         {/* 验证与清除 */}
@@ -184,7 +246,7 @@ export function Settings() {
             <button
               type="button"
               onClick={() => void testCookieConfiguration()}
-              disabled={loading || testingCookie}
+              disabled={loading || testingCookie || importingSnapshot}
               className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
             >
               {testingCookie ? '正在测试…' : '测试当前配置'}
@@ -192,7 +254,7 @@ export function Settings() {
             <button
               type="button"
               onClick={handleClear}
-              disabled={loading || testingCookie}
+              disabled={loading || testingCookie || importingSnapshot}
               className="px-4 py-2 border border-red-300 text-red-600 dark:text-red-400 rounded-lg text-sm hover:bg-red-50 dark:bg-red-950/40 dark:hover:bg-red-950/40 disabled:opacity-40"
             >
               清除 Cookie 配置
@@ -998,9 +1060,42 @@ function StatusBadge({ status }: { status: CookieStatus | null }) {
       </span>
     );
   }
+  if (status.source === 'snapshot') {
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full ${
+        status.validity === 'valid'
+          ? 'bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400'
+          : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
+      }`}>
+        Chrome 快照
+      </span>
+    );
+  }
   return (
     <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400">
       已配置
     </span>
   );
+}
+
+function cookieValidityLabel(status: CookieStatus | null): string {
+  if (!status || status.source !== 'snapshot') return '尚未导入';
+  switch (status.validity) {
+    case 'valid': return '有效';
+    case 'possibly_expired': return '可能失效，建议刷新或重新验证';
+    case 'verification_failed': return '验证失败，请刷新';
+    default: return '尚未导入';
+  }
+}
+
+function cookieValidityClass(status: CookieStatus | null): string {
+  return status?.source === 'snapshot' && status.validity === 'valid'
+    ? 'text-green-600 dark:text-green-400'
+    : status?.source === 'snapshot'
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-gray-500 dark:text-gray-400';
+}
+
+function formatCookieTime(value: string | undefined): string {
+  return value ? new Date(value).toLocaleString('zh-CN') : '尚无记录';
 }

@@ -24,11 +24,13 @@ export class ConnectivityService {
     const startedAt = Date.now();
     try {
       const result = await this.ytDlpService.resolve(OFFICIAL_TEST_VIDEO);
+      this.cookieService.recordVerification(true);
       return this.makeStatus(true, 'OK', '连接成功，可以解析 YouTube', startedAt, {
         videoTitle: result.videos[0]?.title ?? result.title,
       });
     } catch (error) {
       if (!isAppError(error)) throw error;
+      this.cookieService.recordVerification(false, error.code === 'COOKIE_ERROR' || error.code === 'RATE_LIMITED');
       const cookieStatus = this.cookieService.getStatus();
       return this.makeStatus(false, error.code, error.message, startedAt, {
         recommendation: recommendationFor(error.code, cookieStatus),
@@ -63,6 +65,9 @@ export class ConnectivityService {
 function recommendationFor(code: ErrorCode, cookieStatus: CookieStatus): string {
   switch (code) {
     case 'RATE_LIMITED':
+      if (cookieStatus.source === 'snapshot') {
+        return 'Chrome Cookie 快照可能已失效；请完全关闭 Chrome，在 Cookie 设置中刷新快照后重新测试。';
+      }
       if (cookieStatus.source === 'browser') {
         return `已选择 ${cookieStatus.browser ?? '浏览器'} Cookie，但 YouTube 仍要求验证；请完全关闭该浏览器后重试，仍失败时可改用最新导出的 Cookie 文件。`;
       }
@@ -71,6 +76,9 @@ function recommendationFor(code: ErrorCode, cookieStatus: CookieStatus): string 
       }
       return '网络已到达 YouTube，但对方要求验证身份；请配置 Cookie 后重试。';
     case 'COOKIE_ERROR':
+      if (cookieStatus.source === 'snapshot') {
+        return 'Chrome Cookie 快照验证失败；请完全关闭 Chrome 后刷新，失败时仍会保留上一份快照。';
+      }
       if (cookieStatus.source === 'browser') {
         return '请完全关闭所选浏览器后重试；仍失败时选择 Firefox，或改用最新导出的 Cookie 文件。';
       }

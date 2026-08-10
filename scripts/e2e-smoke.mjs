@@ -14,6 +14,7 @@ const runtimeRoot = packageRoot ? path.join(packageRoot, 'resources') : root;
 const liveEnabled = process.env.YLD_E2E_LIVE === '1';
 const keepArtifacts = process.env.YLD_E2E_KEEP === '1';
 const cookieBrowser = process.env.YLD_E2E_COOKIE_BROWSER?.trim().toLowerCase() ?? '';
+const cookieSnapshotBrowser = process.env.YLD_E2E_COOKIE_SNAPSHOT?.trim().toLowerCase() ?? '';
 const testVideoId = 'YE7VzlLtp-4';
 const testVideoUrl = `https://www.youtube.com/watch?v=${testVideoId}`;
 
@@ -24,6 +25,15 @@ if (!liveEnabled) {
 
 if (cookieBrowser && !['chrome', 'edge', 'firefox', 'brave'].includes(cookieBrowser)) {
   console.error('YLD_E2E_COOKIE_BROWSER only supports chrome, edge, firefox, or brave.');
+  process.exit(2);
+}
+
+if (cookieSnapshotBrowser && cookieSnapshotBrowser !== 'chrome') {
+  console.error('YLD_E2E_COOKIE_SNAPSHOT currently supports only chrome.');
+  process.exit(2);
+}
+if (cookieBrowser && cookieSnapshotBrowser) {
+  console.error('Choose either YLD_E2E_COOKIE_BROWSER or YLD_E2E_COOKIE_SNAPSHOT, not both.');
   process.exit(2);
 }
 
@@ -160,12 +170,14 @@ async function apiRequest(baseUrl, route, init = {}) {
 async function waitForTerminalTask(baseUrl, taskId, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   const statuses = [];
+  const phases = [];
   while (Date.now() < deadline) {
     const queue = await apiRequest(baseUrl, '/api/queue');
     const task = queue.tasks.find((candidate) => candidate.id === taskId);
     if (!task) throw new Error(`Task disappeared from the queue: ${taskId}`);
     if (statuses.at(-1) !== task.status) statuses.push(task.status);
-    if (['completed', 'failed', 'cancelled'].includes(task.status)) return { task, statuses };
+    if (task.phase && phases.at(-1) !== task.phase) phases.push(task.phase);
+    if (['completed', 'failed', 'cancelled'].includes(task.status)) return { task, statuses, phases };
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`Task did not finish within ${timeoutMs}ms`);
@@ -187,10 +199,32 @@ try {
       body: JSON.stringify({ browser: cookieBrowser }),
     });
   }
+  let cookieSource = cookieBrowser ? 'browser' : 'none';
+  if (cookieSnapshotBrowser) {
+    const snapshot = await apiRequest(baseUrl, '/api/auth/cookie/snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ browser: cookieSnapshotBrowser }),
+    });
+    if (snapshot.source !== 'snapshot' || snapshot.validity !== 'valid') {
+      throw new Error('Chrome Cookie snapshot was not activated and verified');
+    }
+    cookieSource = snapshot.source;
+  }
 
   const resolved = await apiRequest(baseUrl, `/api/resolve?url=${encodeURIComponent(testVideoUrl)}`);
   const resolvedVideo = resolved.videos.find((video) => video.id === testVideoId);
   if (!resolvedVideo) throw new Error(`Resolve result did not contain ${testVideoId}`);
+  if (!Array.isArray(resolvedVideo.formats) || resolvedVideo.formats.length === 0) {
+    throw new Error('Resolve result did not contain real media formats');
+  }
+  const resolvedHeights = resolvedVideo.formats
+    .map((format) => {
+      const resolution = /x(\d{3,4})$/i.exec(format.resolution ?? '')?.[1];
+      const label = /(\d{3,4})p/i.exec(format.qualityLabel ?? '')?.[1];
+      return Number.parseInt(resolution ?? label ?? '0', 10);
+    })
+    .filter((height) => Number.isFinite(height) && height > 0);
+  const maxResolvedHeight = resolvedHeights.length > 0 ? Math.max(...resolvedHeights) : 0;
 
   await apiRequest(baseUrl, '/api/settings', {
     method: 'PUT',
@@ -232,6 +266,9 @@ try {
   if (completedResult.task.status !== 'completed') {
     throw new Error(`Download ended as ${completedResult.task.status}: ${completedResult.task.error ?? 'no error message'}`);
   }
+  if (completedResult.task.phase !== 'completed' || completedResult.task.progress !== 100) {
+    throw new Error(`Completed task progress did not close correctly: ${completedResult.task.phase ?? 'no phase'} ${completedResult.task.progress}`);
+  }
 
   const queue = await apiRequest(baseUrl, '/api/queue');
   const cancelledTask = queue.tasks.find((task) => task.id === cancelledTaskId);
@@ -260,9 +297,14 @@ try {
     ok: true,
     videoId: resolvedVideo.id,
     downloadedBytes: downloadedFile.size,
+    formatCount: resolvedVideo.formats.length,
+    maxResolvedHeight,
     statusSequence: completedResult.statuses,
+    phaseSequence: completedResult.phases,
+    finalProgress: completedResult.task.progress,
     cancelledStatus: cancelledTask.status,
     historyCountAfterRestart: historyAfterRestart.total,
+    cookieSource,
     packageRoot: packageRoot ?? undefined,
     tempDir: keepArtifacts ? tempDir : undefined,
   }, null, 2));

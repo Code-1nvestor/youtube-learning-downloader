@@ -104,7 +104,9 @@ function buildDiagnosticReport({
   const deno = health?.runtime?.deno;
   const ffmpeg = health?.runtime?.ffmpeg;
   const sanitizedLog = redactDiagnosticText(logText, redactionPaths).trim();
-  const cookieSource = cookie?.source === 'browser'
+  const cookieSource = cookie?.source === 'snapshot'
+    ? 'Chrome Cookie 快照'
+    : cookie?.source === 'browser'
     ? `浏览器（${safeValue(cookie.browser)}）`
     : cookie?.source === 'file'
       ? '本机 Cookie 文件'
@@ -140,6 +142,7 @@ function buildDiagnosticReport({
     '[Cookie]',
     `已配置: ${yesNo(Boolean(cookie?.configured))}`,
     `来源: ${cookieSource}`,
+    `快照状态: ${cookie?.source === 'snapshot' ? safeValue(cookie.validity) : '不适用'}`,
     '',
     '[yt-dlp 更新]',
     `当前版本: ${safeValue(update?.currentVersion)}`,

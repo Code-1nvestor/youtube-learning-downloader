@@ -28,6 +28,8 @@ interface Task {
   title: string;
   status: string;
   progress?: number;
+  totalBytes?: number;
+  phase?: string;
 }
 
 interface MonitorOptions {
@@ -43,7 +45,7 @@ interface MonitorOptions {
 }
 
 function task(id: string, status: string, progress = 0, title = `任务 ${id}`): Task {
-  return { id, status, progress, title };
+  return { id, status, progress, title, totalBytes: 100 };
 }
 
 test('maps queue state to Windows taskbar progress modes', () => {
@@ -66,6 +68,15 @@ test('maps queue state to Windows taskbar progress modes', () => {
     mode: 'none',
   });
   assert.throws(() => calculateTaskbarProgress({}), /tasks 数组/);
+});
+
+test('uses indeterminate taskbar mode for unknown-size downloads and merge phases', () => {
+  assert.deepEqual(calculateTaskbarProgress({
+    tasks: [{ ...task('unknown', 'downloading'), totalBytes: 0, phase: 'downloading-video' }],
+  }), { value: 2, mode: 'indeterminate' });
+  assert.deepEqual(calculateTaskbarProgress({
+    tasks: [{ ...task('merge', 'downloading', 100), phase: 'merging' }],
+  }), { value: 2, mode: 'indeterminate' });
 });
 
 test('uses the first desktop sync as a silent baseline and reports terminal transitions once', () => {

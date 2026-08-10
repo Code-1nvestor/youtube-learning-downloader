@@ -9,7 +9,7 @@
  * - 搜索：同播放列表
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   api,
   ApiError,
@@ -18,7 +18,12 @@ import {
   type SubtitlePreview,
 } from '../api';
 import { useStore } from '../store';
-import { buildActualFormatChoices, buildPresetFormatSelector } from '../utils/formats';
+import {
+  buildActualFormatChoices,
+  buildPresetFormatSelector,
+  buildResolutionChoices,
+  type OutputContainer,
+} from '../utils/formats';
 import { resolveResultIdentity } from '../utils/resolve-result';
 import {
   buildSubtitleFileName,
@@ -170,16 +175,29 @@ function SingleVideoDownload({
   video: ResolveResult['videos'][number];
   onDownloaded: (message: string) => void;
 }) {
-  const [container, setContainer] = useState('mp4');
-  const [quality, setQuality] = useState('720p');
-  const actualFormatChoices = buildActualFormatChoices(video.formats);
-  const [formatMode, setFormatMode] = useState<'preset' | 'actual'>('preset');
-  const [actualFormatId, setActualFormatId] = useState(actualFormatChoices[0]?.formatId ?? '');
-  const [subtitleMode, setSubtitleMode] = useState<'none' | 'embed' | 'separate'>('none');
-  const [subtitleLangs, setSubtitleLangs] = useState('zh-Hans,en');
-  const [autoSubtitle, setAutoSubtitle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { notify } = useStore();
+  const {
+    notify,
+    downloadPreferences,
+    actualFormatIds,
+    setDownloadPreference,
+    setVideoActualFormatId,
+  } = useStore();
+  const {
+    container,
+    quality,
+    formatMode,
+    subtitleMode,
+    subtitleLangs,
+    autoSubtitle,
+  } = downloadPreferences;
+  const actualFormatChoices = useMemo(() => buildActualFormatChoices(video.formats), [video.formats]);
+  const qualityChoices = useMemo(
+    () => buildResolutionChoices(video.formats, container),
+    [container, video.formats],
+  );
+  const storedActualFormatId = actualFormatIds[video.id];
+  const actualFormatId = storedActualFormatId ?? actualFormatChoices[0]?.formatId ?? '';
   const selectedActualFormat = actualFormatChoices.find((choice) => choice.formatId === actualFormatId);
   const effectiveContainer = formatMode === 'actual'
     ? selectedActualFormat?.outputContainer ?? container
@@ -188,10 +206,31 @@ function SingleVideoDownload({
 
   useEffect(() => {
     if (audioOnly && subtitleMode === 'embed') {
-      setSubtitleMode('separate');
+      setDownloadPreference('subtitleMode', 'separate');
       notify('纯音频不支持嵌入字幕，已改为外挂 SRT');
     }
-  }, [audioOnly, notify, subtitleMode]);
+  }, [audioOnly, notify, setDownloadPreference, subtitleMode]);
+
+  useEffect(() => {
+    if (quality !== 'highest' && !qualityChoices.some((choice) => choice.value === quality)) {
+      setDownloadPreference('quality', 'highest');
+      notify(`当前视频不支持之前选择的 ${quality}，已明确改为该视频的最高可用画质`);
+    }
+  }, [notify, quality, qualityChoices, setDownloadPreference]);
+
+  useEffect(() => {
+    if (storedActualFormatId && !selectedActualFormat) {
+      setVideoActualFormatId(video.id, actualFormatChoices[0]?.formatId ?? '');
+      notify('该视频之前选择的实际格式已失效，请确认当前重新加载的格式');
+    }
+  }, [
+    actualFormatChoices,
+    notify,
+    selectedActualFormat,
+    setVideoActualFormatId,
+    storedActualFormatId,
+    video.id,
+  ]);
 
   const handleDownload = async () => {
     if (formatMode === 'actual' && !selectedActualFormat) {
@@ -238,7 +277,7 @@ function SingleVideoDownload({
           <Field label="格式选择方式">
             <select
               value={formatMode}
-              onChange={(e) => setFormatMode(e.target.value as 'preset' | 'actual')}
+              onChange={(e) => setDownloadPreference('formatMode', e.target.value as 'preset' | 'actual')}
               className="select"
             >
               <option value="preset">推荐预设</option>
@@ -249,7 +288,11 @@ function SingleVideoDownload({
           </Field>
           {formatMode === 'preset' ? (
             <Field label="输出格式">
-              <select value={container} onChange={(e) => setContainer(e.target.value)} className="select">
+              <select
+                value={container}
+                onChange={(e) => setDownloadPreference('container', e.target.value as OutputContainer)}
+                className="select"
+              >
                 <option value="mp4">MP4 视频</option>
                 <option value="webm">WebM 视频</option>
                 <option value="mp3">MP3 音频</option>
@@ -274,11 +317,14 @@ function SingleVideoDownload({
             </Field>
           ) : (
             <Field label="画质预设">
-              <select value={quality} onChange={(e) => setQuality(e.target.value)} className="select">
-                <option value="highest">最高</option>
-                <option value="1080p">1080p</option>
-                <option value="720p">720p</option>
-                <option value="480p">480p</option>
+              <select
+                value={quality}
+                onChange={(e) => setDownloadPreference('quality', e.target.value)}
+                className="select"
+              >
+                {qualityChoices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>{choice.label}</option>
+                ))}
               </select>
             </Field>
           )
@@ -286,7 +332,7 @@ function SingleVideoDownload({
           <Field label="实际可用格式">
             <select
               value={actualFormatId}
-              onChange={(e) => setActualFormatId(e.target.value)}
+              onChange={(e) => setVideoActualFormatId(video.id, e.target.value)}
               className="select"
             >
               {actualFormatChoices.map((choice) => (
@@ -303,7 +349,7 @@ function SingleVideoDownload({
         <Field label="字幕模式">
           <select
             value={subtitleMode}
-            onChange={(e) => setSubtitleMode(e.target.value as 'none' | 'embed' | 'separate')}
+            onChange={(e) => setDownloadPreference('subtitleMode', e.target.value as 'none' | 'embed' | 'separate')}
             className="select"
           >
             <option value="none">不下载字幕</option>
@@ -315,7 +361,7 @@ function SingleVideoDownload({
           <input
             type="text"
             value={subtitleLangs}
-            onChange={(e) => setSubtitleLangs(e.target.value)}
+            onChange={(e) => setDownloadPreference('subtitleLangs', e.target.value)}
             disabled={subtitleMode === 'none'}
             placeholder="zh-Hans,en"
             className="input disabled:bg-gray-100 dark:disabled:bg-gray-700 dark:bg-gray-700"
@@ -332,7 +378,7 @@ function SingleVideoDownload({
             <input
               type="checkbox"
               checked={autoSubtitle}
-              onChange={(e) => setAutoSubtitle(e.target.checked)}
+              onChange={(e) => setDownloadPreference('autoSubtitle', e.target.checked)}
               className="accent-primary-600"
             />
             没有人工字幕时，也尝试下载自动生成字幕
@@ -489,15 +535,15 @@ function MultiVideoDownload({
   onDownloaded: (message: string) => void;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set(videos.map((_, i) => i)));
-  const [container, setContainer] = useState('mp4');
-  const [quality, setQuality] = useState('720p');
-  const [subtitleMode, setSubtitleMode] = useState<'none' | 'embed' | 'separate'>('none');
-  const [subtitleLangs, setSubtitleLangs] = useState('zh-Hans,en');
-  const [autoSubtitle, setAutoSubtitle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [gentleMode, setGentleMode] = useState(true);
   const [gentleBatchLimit, setGentleBatchLimit] = useState(20);
-  const { notify, openSettings } = useStore();
+  const { notify, openSettings, downloadPreferences, setDownloadPreference } = useStore();
+  const { container, quality, subtitleMode, subtitleLangs, autoSubtitle } = downloadPreferences;
+  const qualityChoices = useMemo(
+    () => buildResolutionChoices(videos.flatMap((video) => video.formats), container),
+    [container, videos],
+  );
   const audioOnly = isAudioContainer(container);
 
   useEffect(() => {
@@ -520,10 +566,17 @@ function MultiVideoDownload({
 
   useEffect(() => {
     if (audioOnly && subtitleMode === 'embed') {
-      setSubtitleMode('separate');
+      setDownloadPreference('subtitleMode', 'separate');
       notify('纯音频不支持嵌入字幕，已改为外挂 SRT');
     }
-  }, [audioOnly, notify, subtitleMode]);
+  }, [audioOnly, notify, setDownloadPreference, subtitleMode]);
+
+  useEffect(() => {
+    if (quality !== 'highest' && !qualityChoices.some((choice) => choice.value === quality)) {
+      setDownloadPreference('quality', 'highest');
+      notify(`当前解析结果不支持之前选择的 ${quality}，已明确改为各视频的最高可用画质`);
+    }
+  }, [notify, quality, qualityChoices, setDownloadPreference]);
 
   const toggle = (i: number) => {
     setSelected((prev) => {
@@ -632,7 +685,11 @@ function MultiVideoDownload({
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Field label="格式">
-            <select value={container} onChange={(e) => setContainer(e.target.value)} className="select">
+            <select
+              value={container}
+              onChange={(e) => setDownloadPreference('container', e.target.value as OutputContainer)}
+              className="select"
+            >
               <option value="mp4">MP4</option>
               <option value="webm">WebM</option>
               <option value="mp3">MP3</option>
@@ -645,18 +702,21 @@ function MultiVideoDownload({
             </Field>
           ) : (
             <Field label="画质">
-              <select value={quality} onChange={(e) => setQuality(e.target.value)} className="select">
-                <option value="highest">最高</option>
-                <option value="1080p">1080p</option>
-                <option value="720p">720p</option>
-                <option value="480p">480p</option>
+              <select
+                value={quality}
+                onChange={(e) => setDownloadPreference('quality', e.target.value)}
+                className="select"
+              >
+                {qualityChoices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>{choice.label}</option>
+                ))}
               </select>
             </Field>
           )}
           <Field label="字幕">
             <select
               value={subtitleMode}
-              onChange={(e) => setSubtitleMode(e.target.value as 'none' | 'embed' | 'separate')}
+              onChange={(e) => setDownloadPreference('subtitleMode', e.target.value as 'none' | 'embed' | 'separate')}
               className="select"
             >
               <option value="none">不下载</option>
@@ -668,7 +728,7 @@ function MultiVideoDownload({
             <input
               type="text"
               value={subtitleLangs}
-              onChange={(e) => setSubtitleLangs(e.target.value)}
+              onChange={(e) => setDownloadPreference('subtitleLangs', e.target.value)}
               disabled={subtitleMode === 'none'}
               placeholder="zh-Hans,en"
               className="input disabled:bg-gray-100 dark:disabled:bg-gray-700 dark:bg-gray-700"
@@ -685,7 +745,7 @@ function MultiVideoDownload({
             <input
               type="checkbox"
               checked={autoSubtitle}
-              onChange={(event) => setAutoSubtitle(event.target.checked)}
+              onChange={(event) => setDownloadPreference('autoSubtitle', event.target.checked)}
               className="accent-primary-600"
             />
             没有人工字幕时，也尝试下载自动生成字幕

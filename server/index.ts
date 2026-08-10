@@ -15,6 +15,7 @@ import { loadConfig } from './config.ts';
 import { createApp } from './app.ts';
 import { YtDlpService } from './core/yt-dlp.service.ts';
 import { CookieService } from './services/cookie.service.ts';
+import { detectBrowserRunning, exportBrowserCookieSnapshot } from './services/browser-cookie-snapshot.ts';
 import { DownloadService } from './services/download.service.ts';
 import { NamingService } from './services/naming.service.ts';
 import { QueueService } from './services/queue.service.ts';
@@ -91,7 +92,6 @@ async function main(): Promise<void> {
   }
 
   // Cookie 与设置服务先初始化，后续 yt-dlp 调用可动态读取网络参数。
-  const cookieService = new CookieService(config.appDataPath);
   const settingsService = new SettingsService(
     {
       maxConcurrent: config.maxConcurrent,
@@ -106,6 +106,16 @@ async function main(): Promise<void> {
     },
     dbContext,
   );
+  const cookieService = new CookieService(config.appDataPath, {
+    detectBrowserRunning,
+    exportBrowserCookies: (browser, outputPath) => exportBrowserCookieSnapshot({
+      binary: config.ytDlpBinary,
+      denoBinary: config.denoBinary,
+      proxyUrl: settingsService.getSettings().proxyUrl || undefined,
+      browser,
+      outputPath,
+    }),
+  });
 
   const ytDlpService = new YtDlpService({
     binary: config.ytDlpBinary,

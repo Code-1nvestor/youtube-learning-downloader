@@ -12,7 +12,9 @@
  */
 
 /** Cookie 配置来源类型 */
-export type CookieSourceType = 'file' | 'browser' | 'none';
+export type CookieSourceType = 'file' | 'browser' | 'snapshot' | 'none';
+export type BrowserCookieName = 'chrome' | 'edge' | 'firefox' | 'brave' | 'safari';
+export type CookieValidity = 'valid' | 'possibly_expired' | 'verification_failed' | 'not_imported';
 
 /** Cookie 配置状态（API 响应） */
 export interface CookieStatus {
@@ -26,6 +28,14 @@ export interface CookieStatus {
   fileName?: string;
   /** 上次更新时间 ISO 8601 */
   updatedAt?: string;
+  /** 浏览器快照导入时间。 */
+  importedAt?: string;
+  /** 最近一次通过官方测试视频验证的时间。 */
+  lastVerifiedAt?: string;
+  /** 快照有效性状态，不包含任何 Cookie 内容。 */
+  validity: CookieValidity;
+  /** 能检测时返回浏览器是否仍在运行。 */
+  browserRunning?: boolean;
 }
 
 /** 设置 Cookie 来源：Netscape 文件上传 */
@@ -37,6 +47,10 @@ export interface SetCookieFileRequest {
 /** 设置 Cookie 来源：浏览器自动读取 */
 export interface SetCookieBrowserRequest {
   browser: 'chrome' | 'edge' | 'firefox' | 'brave' | 'safari';
+}
+
+export interface ImportCookieSnapshotRequest {
+  browser: BrowserCookieName;
 }
 
 /** yt-dlp --cookies 参数的统一抽象（供服务层使用） */

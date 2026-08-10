@@ -116,6 +116,7 @@ export interface DownloadTask {
   autoSubtitle: boolean;
   status: DownloadStatus;
   progress: number;
+  phase?: 'preparing' | 'downloading-video' | 'downloading-audio' | 'merging' | 'post-processing' | 'completed';
   speed: string;
   eta: string;
   downloadedBytes: number;
@@ -148,10 +149,14 @@ export interface HistoryPage {
 
 export interface CookieStatus {
   configured: boolean;
-  source: 'file' | 'browser' | 'none';
+  source: 'file' | 'browser' | 'snapshot' | 'none';
   browser?: string;
   fileName?: string;
   updatedAt?: string;
+  importedAt?: string;
+  lastVerifiedAt?: string;
+  validity: 'valid' | 'possibly_expired' | 'verification_failed' | 'not_imported';
+  browserRunning?: boolean;
 }
 
 export interface RuntimeToolStatus {
@@ -412,6 +417,12 @@ export const api = {
     request<CookieStatus>('/auth/cookie/browser', {
       method: 'POST',
       body: JSON.stringify({ browser }),
+    }),
+
+  importChromeCookieSnapshot: () =>
+    request<CookieStatus>('/auth/cookie/snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ browser: 'chrome' }),
     }),
 
   clearCookie: () =>

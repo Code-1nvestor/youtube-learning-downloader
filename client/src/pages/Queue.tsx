@@ -102,22 +102,37 @@ function TaskItem({
         </div>
         {/* 进度条 */}
         {(task.status === 'downloading' || task.status === 'paused') && (
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary-500 transition-all"
-                style={{ width: `${Math.min(task.progress, 100)}%` }}
-              />
+          <div className="mt-1.5 space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                {task.totalBytes > 0 ? (
+                  <div
+                    className="h-full bg-primary-500 transition-all"
+                    style={{ width: `${Math.min(task.progress, 100)}%` }}
+                  />
+                ) : (
+                  <div className="h-full w-1/3 bg-primary-500 animate-pulse rounded-full" />
+                )}
+              </div>
+              <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums min-w-16 text-right">
+                {task.totalBytes > 0 ? `${Math.round(task.progress)}%` : '进度未知'}
+              </span>
+              {task.speed && (
+                <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{task.speed}</span>
+              )}
+              {task.eta && task.status === 'downloading' && (
+                <span className="text-xs text-gray-400 dark:text-gray-500">ETA {task.eta}</span>
+              )}
             </div>
-            <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums w-10 text-right">
-              {Math.round(task.progress)}%
-            </span>
-            {task.speed && (
-              <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{task.speed}</span>
-            )}
-            {task.eta && task.status === 'downloading' && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">ETA {task.eta}</span>
-            )}
+            <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 dark:text-gray-500">
+              <span>{downloadPhaseLabel(task.phase)}</span>
+              {task.downloadedBytes > 0 && (
+                <span>
+                  {formatProgressBytes(task.downloadedBytes)}
+                  {task.totalBytes > 0 ? ` / ${formatProgressBytes(task.totalBytes)}` : ' 已下载'}
+                </span>
+              )}
+            </div>
           </div>
         )}
         {/* 错误信息 */}
@@ -186,6 +201,24 @@ function TaskItem({
       </div>
     </div>
   );
+}
+
+function downloadPhaseLabel(phase: DownloadTask['phase']): string {
+  switch (phase) {
+    case 'downloading-video': return '正在下载视频';
+    case 'downloading-audio': return '正在下载音频';
+    case 'merging': return '正在合并音视频';
+    case 'post-processing': return '正在后处理';
+    case 'completed': return '已完成';
+    default: return '正在准备下载';
+  }
+}
+
+function formatProgressBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
 }
 
 function ActionButton({

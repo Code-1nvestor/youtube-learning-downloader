@@ -21,6 +21,14 @@ export type DownloadStatus =
   | 'cancelled'     // 用户取消
   | 'paused';       // 用户暂停（保留部分文件，可恢复）
 
+export type DownloadPhase =
+  | 'preparing'
+  | 'downloading-video'
+  | 'downloading-audio'
+  | 'merging'
+  | 'post-processing'
+  | 'completed';
+
 /** 单个下载任务（运行时态，存于内存队列） */
 export interface DownloadTask {
   /** 任务唯一 ID（UUID） */
@@ -50,6 +58,8 @@ export interface DownloadTask {
   status: DownloadStatus;
   /** 进度百分比 0-100 */
   progress: number;
+  /** 当前真实阶段；旧任务缺失时前端按准备中处理。 */
+  phase?: DownloadPhase;
   /** 下载速度（人类可读，如 "2.3MiB/s"） */
   speed: string;
   /** 剩余时间（人类可读，如 "00:41"） */
@@ -81,12 +91,12 @@ export interface DownloadTask {
 // ————————————————————————————————————————————
 
 export interface ProgressInfo {
-  percent: number;
-  totalSize: number;
-  totalSizeUnit: string;
-  speed: number;
-  speedUnit: string;
-  eta: string;
+  stage: DownloadPhase;
+  percent?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  speed?: string;
+  eta?: string;
 }
 
 // ————————————————————————————————————————————

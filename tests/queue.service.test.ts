@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { initDatabase } from '../server/db/database.ts';
 import { taskToRow } from '../server/db/task-serializer.ts';
-import type { DownloadService } from '../server/services/download.service.ts';
+import type { DownloadCallbacks, DownloadService } from '../server/services/download.service.ts';
 import { NamingService } from '../server/services/naming.service.ts';
 import { QueueService } from '../server/services/queue.service.ts';
 import { AppError } from '../server/types/errors.ts';
@@ -42,6 +42,37 @@ class ControlledDownloadService {
   }
 }
 
+class PhasedProgressDownloadService {
+  private finishDownload?: () => void;
+
+  async download(
+    _task: DownloadTask,
+    _signal: AbortSignal,
+    callbacks: DownloadCallbacks,
+  ): Promise<void> {
+    callbacks.onProgress({
+      stage: 'downloading-video',
+      percent: 100,
+      downloadedBytes: 100,
+      totalBytes: 100,
+      speed: '1MiB/s',
+      eta: '00:00',
+    });
+    callbacks.onProgress({
+      stage: 'downloading-audio',
+      downloadedBytes: 10,
+      speed: '128KiB/s',
+    });
+    await new Promise<void>((resolve) => {
+      this.finishDownload = resolve;
+    });
+  }
+
+  finish(): void {
+    this.finishDownload?.();
+  }
+}
+
 async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
   const startedAt = Date.now();
   while (!predicate()) {
@@ -49,6 +80,38 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<v
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+test('a new unknown-size audio phase does not retain the previous video percentage', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-progress-'));
+  const download = new PhasedProgressDownloadService();
+  const queue = new QueueService(
+    download as unknown as DownloadService,
+    new NamingService(),
+    {
+      maxConcurrent: 1,
+      maxRetries: 0,
+      downloadPath: outputRoot,
+      namingTemplate: '{title}.{ext}',
+    },
+  );
+  try {
+    const taskId = queue.enqueue([{ videoId: 'phased-video', title: 'phased' }]).taskIds[0]!;
+    await waitUntil(() => queue.getTask(taskId)?.phase === 'downloading-audio');
+    const task = queue.getTask(taskId)!;
+    assert.equal(task.progress, 0);
+    assert.equal(task.totalBytes, 0);
+    assert.equal(task.downloadedBytes, 10);
+    assert.equal(task.speed, '128KiB/s');
+
+    download.finish();
+    await waitUntil(() => queue.getTask(taskId)?.status === 'completed');
+    assert.equal(queue.getTask(taskId)?.phase, 'completed');
+    assert.equal(queue.getTask(taskId)?.progress, 100);
+  } finally {
+    queue.shutdown();
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  }
+});
 
 test('pause and cancel never exceed the configured concurrency', async () => {
   const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-queue-'));

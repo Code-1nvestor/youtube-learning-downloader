@@ -189,14 +189,14 @@ test('parses JSON progress output and ignores unrelated or malformed lines', () 
   );
 
   assert.deepEqual(parsed, {
+    stage: 'downloading-video',
     percent: 42.3,
-    totalSize: 123456789,
-    totalSizeUnit: '117.7MiB',
-    speed: 2.34,
-    speedUnit: 'MiB/s',
+    downloadedBytes: 52000000,
+    totalBytes: 123456789,
+    speed: '2.34MiB/s',
     eta: '00:41',
   });
-  assert.equal(service.parseProgress('[download] 42.3%'), null);
+  assert.equal(service.parseProgress('[download] 42.3%')?.percent, undefined);
   assert.equal(service.parseProgress('{not-json}'), null);
 });
 

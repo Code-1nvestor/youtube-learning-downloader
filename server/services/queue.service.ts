@@ -277,6 +277,7 @@ export class QueueService {
         autoSubtitle: input.autoSubtitle ?? false,
         status: 'queued',
         progress: 0,
+        phase: 'preparing',
         speed: '',
         eta: '',
         downloadedBytes: 0,
@@ -588,6 +589,7 @@ export class QueueService {
     // activeCount 已在 tryStartNext() 中递增，此处不再 ++
     task.status = 'downloading';
     task.progress = 0;
+    task.phase = 'preparing';
     task.error = undefined;
     task.errorCode = undefined;
     task.nextRetryAt = undefined;
@@ -600,13 +602,27 @@ export class QueueService {
     try {
       await this.downloadService.download(task, controller.signal, {
         onProgress: (info: ProgressInfo) => {
-          task.progress = info.percent;
-          task.speed = `${info.speed}${info.speedUnit}`;
-          task.eta = info.eta;
-          task.downloadedBytes = info.totalSize > 0
-            ? Math.round((info.percent / 100) * info.totalSize)
-            : 0;
-          task.totalBytes = info.totalSize;
+          const previousPhase = task.phase;
+          if (
+            (info.stage === 'downloading-video' || info.stage === 'downloading-audio')
+            && previousPhase !== info.stage
+          ) {
+            task.progress = 0;
+            task.downloadedBytes = 0;
+            task.totalBytes = 0;
+            task.speed = '';
+            task.eta = '';
+          }
+          task.phase = info.stage;
+          if (info.percent !== undefined) task.progress = info.percent;
+          if (info.speed !== undefined) task.speed = info.speed;
+          if (info.eta !== undefined) task.eta = info.eta;
+          if (info.downloadedBytes !== undefined) task.downloadedBytes = info.downloadedBytes;
+          if (info.totalBytes !== undefined) task.totalBytes = info.totalBytes;
+          if (info.stage === 'merging' || info.stage === 'post-processing') {
+            task.speed = '';
+            task.eta = '';
+          }
 
           // 节流持久化进度
           const now = Date.now();
@@ -623,6 +639,7 @@ export class QueueService {
 
       task.status = 'completed';
       task.progress = 100;
+      task.phase = 'completed';
       task.speed = '';
       task.eta = '';
       task.completedAt = new Date().toISOString();

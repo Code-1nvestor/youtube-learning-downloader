@@ -28,6 +28,7 @@ import type { CookieArg } from '../types/auth.ts';
 import type { GentleSettings } from '../types/settings.ts';
 import type { DownloadTask, ProgressInfo } from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
+import { parseDownloadProgress } from './download-progress.ts';
 
 const MIB = 1024 * 1024;
 const UNKNOWN_DOWNLOAD_RESERVE_BYTES = 256 * MIB;
@@ -103,7 +104,11 @@ export class DownloadService {
         if (progress) callbacks.onProgress(progress);
       },
       onStderrLine: (line) => {
-        // stderr 通常是警告或错误信息
+        const progress = this.parseProgress(line);
+        if (progress) {
+          callbacks.onProgress(progress);
+          return;
+        }
         if (line.startsWith('ERROR:')) {
           // 致命错误：交给调用方处理（通过非零退出码触发）
           return;
@@ -223,7 +228,7 @@ export class DownloadService {
     // 进度输出：JSON 格式，每行一个更新
     // 字段：downloaded_bytes, total_bytes, speed, eta, fragment_index...
     args.push('--newline');
-    args.push('--progress-template', '{"percent":"%(progress._percent_str)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s","downloaded_bytes":%(progress.downloaded_bytes)s,"total_bytes":%(progress._total_bytes)s}');
+    args.push('--progress-template', '{"status":"%(progress.status)s","percent":"%(progress._percent_str)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s","downloaded_bytes":"%(progress.downloaded_bytes)s","total_bytes":"%(progress._total_bytes)s","vcodec":"%(info.vcodec)s","acodec":"%(info.acodec)s","format_id":"%(info.format_id)s"}');
 
     // 断点续传 + 不覆盖
     args.push('--continue');
@@ -285,42 +290,7 @@ export class DownloadService {
    * 需要清洗。total_bytes 可能为 NaN（直播/未知大小）。
    */
   parseProgress(line: string): ProgressInfo | null {
-    // 只处理 JSON 行（跳过 [download] 等前缀行）
-    const jsonStart = line.indexOf('{');
-    if (jsonStart === -1) return null;
-
-    try {
-      const raw = JSON.parse(line.slice(jsonStart)) as Record<string, unknown>;
-
-      const percent = parseFloat(String(raw.percent ?? '0').trim().replace('%', ''));
-      const speed = parseFloat(String(raw.speed ?? '0').trim().replace(/[^\d.]/g, '')) || 0;
-      const speedUnit = String(raw.speed ?? '').trim().replace(/[\d.\s]+/g, '') || 'MiB/s';
-      const eta = String(raw.eta ?? '00:00').trim();
-      const totalSize = parseFloat(String(raw.total_bytes ?? '0').replace(/[^\d.]/g, '')) || 0;
-
-      // total_bytes 可能为 NaN（未知大小），用 0 表示
-      const totalBytesUnit = totalSize > 0 ? this.formatBytes(totalSize) : 'Unknown';
-
-      return {
-        percent: Number.isFinite(percent) ? percent : 0,
-        totalSize,
-        totalSizeUnit: totalBytesUnit,
-        speed,
-        speedUnit,
-        eta,
-      };
-    } catch {
-      // 非 JSON 行（如 [info] ...），跳过
-      return null;
-    }
-  }
-
-  /** 字节数 → 人类可读（如 164000000 → "156.4MiB"） */
-  private formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KiB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GiB`;
+    return parseDownloadProgress(line);
   }
 }
 

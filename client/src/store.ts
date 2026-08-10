@@ -12,6 +12,11 @@
 
 import { create } from 'zustand';
 import type { ResolveResult, DownloadTask, CookieStatus } from './api';
+import {
+  loadDownloadUiState,
+  saveDownloadUiState,
+  type DownloadPreferences,
+} from './utils/download-preferences';
 
 type View = 'home' | 'queue' | 'history' | 'settings';
 export type SettingsTarget = 'download' | 'network' | 'runtime' | 'update' | 'diagnostics' | 'cookie' | 'about';
@@ -39,6 +44,12 @@ interface AppState {
   setResolveResult: (r: ResolveResult | null) => void;
   setError: (e: UserFacingError | null) => void;
 
+  // -- 下载选择 --
+  downloadPreferences: DownloadPreferences;
+  actualFormatIds: Record<string, string>;
+  setDownloadPreference: <K extends keyof DownloadPreferences>(key: K, value: DownloadPreferences[K]) => void;
+  setVideoActualFormatId: (videoId: string, formatId: string) => void;
+
   // -- 队列 --
   tasks: DownloadTask[];
   setTasks: (t: DownloadTask[]) => void;
@@ -58,6 +69,7 @@ interface AppState {
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+const initialDownloadUi = loadDownloadUiState();
 
 function cancelNoticeTimer(): void {
   if (noticeTimer !== null) {
@@ -83,6 +95,22 @@ export const useStore = create<AppState>((set) => ({
   setResolving: (b) => set({ resolving: b }),
   setResolveResult: (r) => set({ resolveResult: r }),
   setError: (e) => set({ error: e }),
+
+  // 下载选择
+  downloadPreferences: initialDownloadUi.preferences,
+  actualFormatIds: initialDownloadUi.actualFormatIds,
+  setDownloadPreference: (key, value) => set((state) => {
+    const preferences = { ...state.downloadPreferences, [key]: value };
+    saveDownloadUiState({ preferences, actualFormatIds: state.actualFormatIds });
+    return { downloadPreferences: preferences };
+  }),
+  setVideoActualFormatId: (videoId, formatId) => set((state) => {
+    const actualFormatIds = { ...state.actualFormatIds };
+    if (formatId) actualFormatIds[videoId] = formatId;
+    else delete actualFormatIds[videoId];
+    saveDownloadUiState({ preferences: state.downloadPreferences, actualFormatIds });
+    return { actualFormatIds };
+  }),
 
   // 队列
   tasks: [],

@@ -10,11 +10,14 @@ import type { CookieStatus } from '../server/types/auth.ts';
 function createService(
   resolve: YtDlpService['resolve'],
   proxyUrl = '',
-  cookieStatus: CookieStatus = { configured: false, source: 'none' },
+  cookieStatus: CookieStatus = { configured: false, source: 'none', validity: 'not_imported' },
 ) {
   const ytDlp = { resolve } as YtDlpService;
   const settings = { getSettings: () => ({ proxyUrl }) } as unknown as SettingsService;
-  const cookie = { getStatus: () => cookieStatus } as unknown as CookieService;
+  const cookie = {
+    getStatus: () => cookieStatus,
+    recordVerification: () => {},
+  } as unknown as CookieService;
   return new ConnectivityService(ytDlp, settings, cookie);
 }
 
@@ -23,7 +26,12 @@ test('reports a successful YouTube parse without downloading media', async () =>
   const service = createService(async (url) => {
     received = url;
     return { kind: 'video', title: 'yt-dlp test video', videos: [] };
-  }, 'http://127.0.0.1:7890', { configured: true, source: 'browser', browser: 'edge' });
+  }, 'http://127.0.0.1:7890', {
+    configured: true,
+    source: 'browser',
+    browser: 'edge',
+    validity: 'not_imported',
+  });
 
   const status = await service.testYouTube();
   assert.match(received, /youtube\.com\/watch/);
@@ -55,6 +63,7 @@ test('explains how to refresh a configured Cookie that still fails verification'
     configured: true,
     source: 'browser',
     browser: 'edge',
+    validity: 'not_imported',
   }).testYouTube();
   assert.match(browserStatus.recommendation ?? '', /关闭.*浏览器/);
   assert.equal(browserStatus.cookieConfigured, true);
@@ -63,6 +72,7 @@ test('explains how to refresh a configured Cookie that still fails verification'
     configured: true,
     source: 'file',
     fileName: 'cookies.txt',
+    validity: 'not_imported',
   }).testYouTube();
   assert.match(fileStatus.recommendation ?? '', /重新登录.*导出最新 Cookie/);
   assert.equal(fileStatus.cookieConfigured, true);
@@ -75,11 +85,26 @@ test('keeps Cookie extraction failures actionable in connectivity diagnostics', 
     configured: true,
     source: 'browser',
     browser: 'edge',
+    validity: 'not_imported',
   });
 
   const status = await service.testYouTube();
   assert.equal(status.code, 'COOKIE_ERROR');
   assert.match(status.recommendation ?? '', /关闭.*浏览器|Firefox/);
+});
+
+test('routes snapshot rejection to the one-time Chrome refresh action', async () => {
+  const service = createService(async () => {
+    throw new AppError('RATE_LIMITED', 'verification required');
+  }, '', {
+    configured: true,
+    source: 'snapshot',
+    browser: 'chrome',
+    validity: 'verification_failed',
+  });
+  const result = await service.testYouTube();
+  assert.equal(result.ok, false);
+  assert.match(result.recommendation ?? '', /关闭 Chrome.*刷新快照/);
 });
 
 test('rejects overlapping connection tests', async () => {

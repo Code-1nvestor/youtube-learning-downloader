@@ -24,6 +24,13 @@ function calculateTaskbarProgress(queueStatus) {
   const tasks = readTasks(queueStatus);
   const downloading = tasks.filter((task) => task.status === 'downloading');
   if (downloading.length > 0) {
+    const hasIndeterminatePhase = downloading.some((task) => (
+      !Number.isFinite(Number(task.totalBytes))
+      || Number(task.totalBytes) <= 0
+      || task.phase === 'merging'
+      || task.phase === 'post-processing'
+    ));
+    if (hasIndeterminatePhase) return { value: 2, mode: 'indeterminate' };
     return { value: averageProgress(downloading), mode: 'normal' };
   }
 
