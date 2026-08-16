@@ -70,25 +70,68 @@ export async function detectBrowserRunning(
   runner: ProcessRunner = runProcess,
 ): Promise<boolean | undefined> {
   if (process.platform !== 'win32') return undefined;
-  const executable = browserExecutable(browser);
-  if (!executable) return undefined;
+  const processName = browserProcessName(browser);
+  if (!processName) return undefined;
   try {
-    const result = await runner('tasklist.exe', ['/FI', `IMAGENAME eq ${executable}`, '/FO', 'CSV', '/NH'], {
+    const result = await runner('powershell.exe', buildBrowserProcessSnapshotArgs(processName), {
       timeoutMs: 10_000,
       maxOutputBytes: 1024 * 1024,
     });
-    return result.exitCode === 0 && result.stdout.toLowerCase().includes(`"${executable.toLowerCase()}"`);
+    if (result.exitCode !== 0) return undefined;
+    return parseBrowserProcessSnapshot(result.stdout);
   } catch {
     return undefined;
   }
 }
 
-function browserExecutable(browser: BrowserCookieName): string | undefined {
+export function buildBrowserProcessSnapshotArgs(processName: string): string[] {
+  const script = [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    `$items = @(Get-Process -Name '${processName}' -ErrorAction SilentlyContinue | ForEach-Object {`,
+    '  $hasExited = $false',
+    '  try { $hasExited = $_.HasExited } catch {}',
+    '  $commandLine = $null',
+    '  try { $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction Stop).CommandLine } catch {}',
+    '  [PSCustomObject]@{ processId = $_.Id; hasExited = $hasExited; commandLine = $commandLine }',
+    '})',
+    'ConvertTo-Json -Compress -InputObject $items',
+  ].join('; ');
+  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script];
+}
+
+export function parseBrowserProcessSnapshot(output: string): boolean | undefined {
+  const trimmed = output.trim();
+  if (!trimmed) return false;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed)) return undefined;
+
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') return undefined;
+    const processInfo = item as { hasExited?: unknown; commandLine?: unknown };
+    if (processInfo.hasExited === true) continue;
+    if (
+      typeof processInfo.commandLine === 'string'
+      && /(?:^|\s)"?--type=crashpad-handler"?(?:\s|$)/i.test(processInfo.commandLine)
+    ) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function browserProcessName(browser: BrowserCookieName): string | undefined {
   switch (browser) {
-    case 'chrome': return 'chrome.exe';
-    case 'edge': return 'msedge.exe';
-    case 'firefox': return 'firefox.exe';
-    case 'brave': return 'brave.exe';
+    case 'chrome': return 'chrome';
+    case 'edge': return 'msedge';
+    case 'firefox': return 'firefox';
+    case 'brave': return 'brave';
     default: return undefined;
   }
 }
