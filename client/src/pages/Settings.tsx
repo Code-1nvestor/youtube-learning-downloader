@@ -112,7 +112,7 @@ export function Settings() {
     try {
       await window.desktop.startYoutubeAuth();
       setAuthWindowOpen(true);
-      notify('专用 Chrome 已打开；登录 YouTube 后回到这里完成授权');
+      notify('专用 Chrome 已打开；登录 YouTube 后请关闭该窗口，再回到这里完成授权');
     } catch (error) {
       notify(error instanceof Error ? error.message : '专用 Chrome 启动失败');
     } finally {
@@ -228,7 +228,7 @@ export function Settings() {
             <div>
               <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">推荐：专用 Chrome 登录</h3>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                应用使用独立的 Chrome 登录空间，不读取日常 Chrome；授权和下载时都不需要关闭你正在使用的浏览器。
+                登录阶段使用无调试参数的独立 Chrome；关闭该专用窗口后，应用才会在后台读取 YouTube 登录状态。日常 Chrome 无需关闭。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -249,7 +249,7 @@ export function Settings() {
                     disabled={authorizing}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-40"
                   >
-                    {authorizing ? '正在保存…' : '我已登录，完成授权'}
+                    {authorizing ? '正在安全导入…' : '专用窗口已关闭，完成授权'}
                   </button>
                   <button
                     type="button"
@@ -270,6 +270,11 @@ export function Settings() {
             <p>最近授权：{formatCookieTime(cookieStatus?.importedAt)}</p>
             <p>最近验证：{formatCookieTime(cookieStatus?.lastVerifiedAt)}</p>
           </div>
+          {authWindowOpen && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              请先在专用 Chrome 登录 YouTube，然后关闭整个专用窗口，最后点击“完成授权”。登录时不会启用远程调试。
+            </p>
+          )}
           {cookieStatus?.source === 'managed' && (
             <p className="mt-2 text-xs text-green-700 dark:text-green-400">
               当前解析与下载使用应用保存的专用登录状态，不会占用或锁定日常 Chrome。

@@ -19,15 +19,25 @@ function findChromeExecutable({ env = process.env, existsSync = fs.existsSync } 
   return candidates.find((candidate) => existsSync(candidate));
 }
 
-function buildChromeAuthArgs(profileDir) {
+function buildChromeLoginArgs(profileDir) {
   return [
     `--user-data-dir=${profileDir}`,
-    '--remote-debugging-address=127.0.0.1',
-    '--remote-debugging-port=0',
     '--no-first-run',
     '--no-default-browser-check',
     '--new-window',
     'https://www.youtube.com/',
+  ];
+}
+
+function buildChromeExportArgs(profileDir) {
+  return [
+    `--user-data-dir=${profileDir}`,
+    '--remote-debugging-address=127.0.0.1',
+    '--remote-debugging-port=0',
+    '--headless=new',
+    '--no-first-run',
+    '--no-default-browser-check',
+    'about:blank',
   ];
 }
 
@@ -145,62 +155,88 @@ function createYouTubeAuthController(options) {
   const fsImpl = options.fsImpl ?? fs;
   const spawnProcess = options.spawnProcess ?? spawn;
   const cdpCommand = options.cdpCommand ?? sendCdpCommand;
-  let child = null;
+  const waitForPort = options.waitForDevToolsPort ?? waitForDevToolsPort;
+  let chromeExecutable = null;
+  let loginChild = null;
+  let exportChild = null;
   let webSocketUrl = null;
 
-  async function start() {
-    if (child && child.exitCode === null && webSocketUrl) return { started: true, reused: true };
-    const chromeExecutable = options.chromeExecutable ?? findChromeExecutable({
+  function resolveChromeExecutable() {
+    chromeExecutable ??= options.chromeExecutable ?? findChromeExecutable({
       env: options.env,
       existsSync: fsImpl.existsSync.bind(fsImpl),
     });
     if (!chromeExecutable) throw new Error('未找到 Google Chrome，请先安装 Chrome 后重试');
+    return chromeExecutable;
+  }
 
+  async function start() {
+    if (loginChild && loginChild.exitCode === null) return { started: true, reused: true };
     fsImpl.mkdirSync(profileDir, { recursive: true });
-    const activePortPath = path.join(profileDir, 'DevToolsActivePort');
-    fsImpl.rmSync(activePortPath, { force: true });
-    child = spawnProcess(chromeExecutable, buildChromeAuthArgs(profileDir), {
+    loginChild = spawnProcess(resolveChromeExecutable(), buildChromeLoginArgs(profileDir), {
       stdio: 'ignore',
       windowsHide: false,
     });
-    child.once?.('error', () => {});
-    try {
-      webSocketUrl = await waitForDevToolsPort(activePortPath, child, { fsImpl, timeoutMs: options.startTimeoutMs });
-      return { started: true, reused: false };
-    } catch (error) {
-      child = null;
-      webSocketUrl = null;
-      throw error;
+    loginChild.once?.('error', () => {});
+    return { started: true, reused: false };
+  }
+
+  async function stopExportBrowser() {
+    if (webSocketUrl && exportChild?.exitCode === null) {
+      try { await cdpCommand(webSocketUrl, 'Browser.close', {}, { timeoutMs: 3_000 }); } catch { /* best effort */ }
     }
+    exportChild = null;
+    webSocketUrl = null;
   }
 
   async function exportCookies() {
-    if (!webSocketUrl || !child || child.exitCode !== null) {
-      throw new Error('专用 Chrome 登录窗口未打开，请先点击“打开专用登录窗口”');
+    if (loginChild?.exitCode === null) {
+      throw new Error('请先关闭专用 Chrome 登录窗口，再点击“完成授权”');
     }
-    const result = await cdpCommand(webSocketUrl, 'Storage.getCookies');
-    return serializeYouTubeCookies(result?.cookies);
+    loginChild = null;
+    fsImpl.mkdirSync(profileDir, { recursive: true });
+    const activePortPath = path.join(profileDir, 'DevToolsActivePort');
+    fsImpl.rmSync(activePortPath, { force: true });
+    exportChild = spawnProcess(resolveChromeExecutable(), buildChromeExportArgs(profileDir), {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    exportChild.once?.('error', () => {});
+    try {
+      webSocketUrl = await waitForPort(activePortPath, exportChild, {
+        fsImpl,
+        timeoutMs: options.startTimeoutMs,
+      });
+      const result = await cdpCommand(webSocketUrl, 'Storage.getCookies');
+      return serializeYouTubeCookies(result?.cookies);
+    } finally {
+      await stopExportBrowser();
+    }
   }
 
   async function close() {
-    if (webSocketUrl && child?.exitCode === null) {
-      try { await cdpCommand(webSocketUrl, 'Browser.close', {}, { timeoutMs: 3_000 }); } catch { /* best effort */ }
+    await stopExportBrowser();
+    if (loginChild?.exitCode === null) {
+      try { loginChild.kill(); } catch { /* best effort */ }
     }
-    child = null;
-    webSocketUrl = null;
+    loginChild = null;
   }
 
   return {
     start,
     exportCookies,
     close,
-    isRunning: () => Boolean(child && child.exitCode === null && webSocketUrl),
+    isRunning: () => Boolean(
+      (loginChild && loginChild.exitCode === null)
+      || (exportChild && exportChild.exitCode === null),
+    ),
   };
 }
 
 module.exports = {
   AUTH_COOKIE_NAMES,
-  buildChromeAuthArgs,
+  buildChromeExportArgs,
+  buildChromeLoginArgs,
   createYouTubeAuthController,
   findChromeExecutable,
   isYouTubeDomain,
