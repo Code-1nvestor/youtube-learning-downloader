@@ -165,6 +165,20 @@ test('extracts real MP3 and M4A audio instead of only changing the file extensio
   }
 });
 
+test('re-encodes non-WebM source formats into a real WebM output', () => {
+  const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
+  const args = service.buildDownloadArgs(createTask({
+    container: 'webm',
+    outputPath: 'C:\\Downloads\\video.webm',
+    formatId: '95',
+  }));
+
+  assert.deepEqual(
+    args.slice(args.indexOf('--merge-output-format'), args.indexOf('--merge-output-format') + 4),
+    ['--merge-output-format', 'webm/mkv', '--recode-video', 'webm'],
+  );
+});
+
 test('rejects embedded subtitles for audio-only output before launching yt-dlp', () => {
   const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
 

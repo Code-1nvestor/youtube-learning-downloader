@@ -221,8 +221,13 @@ export class DownloadService {
     // 输出容器必须由 yt-dlp/ffmpeg 真正处理，不能只修改文件扩展名。
     if (task.container === 'mp3' || task.container === 'm4a') {
       args.push('--extract-audio', '--audio-format', task.container);
-    } else if (task.container === 'mp4' || task.container === 'webm') {
-      args.push('--merge-output-format', task.container);
+    } else if (task.container === 'mp4') {
+      args.push('--merge-output-format', 'mp4');
+    } else if (task.container === 'webm') {
+      // 登录 Cookie 可能使 YouTube 只返回 MP4/HLS。优先直接合并原生 WebM；
+      // 若实际轨道不是 WebM，则先使用兼容的中间容器，再由 ffmpeg 真正转码。
+      args.push('--merge-output-format', 'webm/mkv');
+      args.push('--recode-video', 'webm');
     }
 
     // 进度输出：JSON 格式，每行一个更新

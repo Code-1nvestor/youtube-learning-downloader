@@ -242,7 +242,7 @@ function SingleVideoDownload({
       const outputContainer = effectiveContainer;
       const formatId = formatMode === 'actual'
         ? selectedActualFormat!.selector
-        : buildPresetFormatSelector(quality, container);
+        : buildPresetFormatSelector(quality, container, video.formats);
       const compatibleSubtitleMode = normalizeSubtitleModeForContainer(outputContainer, subtitleMode);
       const task: CreateDownloadTaskInput = {
         videoId: video.id,
@@ -613,7 +613,7 @@ function MultiVideoDownload({
           ...(v.playlistTitle ? { playlistTitle: v.playlistTitle } : {}),
           ...(v.playlistIndex ? { playlistIndex: v.playlistIndex } : {}),
           container,
-          formatId: buildPresetFormatSelector(quality, container),
+          formatId: buildPresetFormatSelector(quality, container, v.formats),
           subtitleLangs: parseSubtitleLanguages(compatibleSubtitleMode, subtitleLangs),
           subtitleMode: compatibleSubtitleMode,
           autoSubtitle: compatibleSubtitleMode !== 'none' && autoSubtitle,
