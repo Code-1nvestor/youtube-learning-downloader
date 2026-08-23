@@ -65,6 +65,9 @@ export class ConnectivityService {
 function recommendationFor(code: ErrorCode, cookieStatus: CookieStatus): string {
   switch (code) {
     case 'RATE_LIMITED':
+      if (cookieStatus.source === 'managed') {
+        return '专用登录状态可能已失效；请在 Cookie 设置中重新打开专用 Chrome 登录窗口。';
+      }
       if (cookieStatus.source === 'snapshot') {
         return 'Chrome Cookie 快照可能已失效；请完全关闭 Chrome，在 Cookie 设置中刷新快照后重新测试。';
       }
@@ -76,6 +79,9 @@ function recommendationFor(code: ErrorCode, cookieStatus: CookieStatus): string 
       }
       return '网络已到达 YouTube，但对方要求验证身份；请配置 Cookie 后重试。';
     case 'COOKIE_ERROR':
+      if (cookieStatus.source === 'managed') {
+        return '专用登录验证失败；请重新打开专用 Chrome 登录窗口并确认 YouTube 已登录。';
+      }
       if (cookieStatus.source === 'snapshot') {
         return 'Chrome Cookie 快照验证失败；请完全关闭 Chrome 后刷新，失败时仍会保留上一份快照。';
       }

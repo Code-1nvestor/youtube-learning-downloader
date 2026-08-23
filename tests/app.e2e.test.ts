@@ -187,6 +187,41 @@ async function waitForTask(
   throw new Error(`Task ${taskId} did not reach ${expectedStatus}`);
 }
 
+test('managed YouTube login Cookie can only be saved by the desktop main process', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yld-app-auth-'));
+  let harness: Harness | undefined;
+  const body = JSON.stringify({
+    content: '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSAPISID\ttest-value',
+  });
+  try {
+    harness = await createHarness(tempDir, path.join(tempDir, 'app.db'));
+    const unauthorized = await fetch(`${harness.baseUrl}/api/auth/cookie/managed`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+    assert.equal(unauthorized.status, 403);
+
+    const authorized = await fetch(`${harness.baseUrl}/api/auth/cookie/managed`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-desktop-token': 'test-desktop-token',
+      },
+      body,
+    });
+    assert.equal(authorized.status, 200);
+    const payload = await authorized.json() as { success: boolean; data?: { source: string; fileName?: string } };
+    assert.equal(payload.success, true);
+    assert.equal(payload.data?.source, 'managed');
+    assert.equal(payload.data?.fileName, 'youtube-auth.txt');
+    assert.doesNotMatch(await (await fetch(`${harness.baseUrl}/api/auth/cookie`)).text(), /test-value/);
+  } finally {
+    await harness?.close();
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
 test('HTTP download flow persists completed and cancelled tasks across restart', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yld-app-e2e-'));
   const databasePath = path.join(tempDir, 'app.db');

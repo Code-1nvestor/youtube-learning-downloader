@@ -12,7 +12,7 @@
  */
 
 /** Cookie 配置来源类型 */
-export type CookieSourceType = 'file' | 'browser' | 'snapshot' | 'none';
+export type CookieSourceType = 'file' | 'browser' | 'snapshot' | 'managed' | 'none';
 export type BrowserCookieName = 'chrome' | 'edge' | 'firefox' | 'brave' | 'safari';
 export type CookieValidity = 'valid' | 'possibly_expired' | 'verification_failed' | 'not_imported';
 
@@ -36,6 +36,8 @@ export interface CookieStatus {
   validity: CookieValidity;
   /** 能检测时返回浏览器是否仍在运行。 */
   browserRunning?: boolean;
+  /** 旧版每次直读浏览器配置已停用，需迁移到独立授权。 */
+  migrationRequired?: boolean;
 }
 
 /** 设置 Cookie 来源：Netscape 文件上传 */

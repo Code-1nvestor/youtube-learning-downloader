@@ -72,7 +72,7 @@ export function createApp(
   app.use('/api/resolve', createResolveRouter(ytDlpService));
   app.use('/api/download', createDownloadRouter(ytDlpService, queueService));
   app.use('/api/queue', createQueueRouter(queueService));
-  app.use('/api/auth', createAuthRouter(cookieService));
+  app.use('/api/auth', createAuthRouter(cookieService, desktopApiToken));
   app.use('/api/subtitle', createSubtitleRouter(subtitleService));
   app.use('/api/history', createHistoryRouter(historyService, queueService));
   app.use('/api/settings', createSettingsRouter(settingsService, queueService, subtitleService));

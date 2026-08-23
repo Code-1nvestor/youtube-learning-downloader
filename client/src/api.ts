@@ -149,7 +149,7 @@ export interface HistoryPage {
 
 export interface CookieStatus {
   configured: boolean;
-  source: 'file' | 'browser' | 'snapshot' | 'none';
+  source: 'file' | 'browser' | 'snapshot' | 'managed' | 'none';
   browser?: string;
   fileName?: string;
   updatedAt?: string;
@@ -157,6 +157,7 @@ export interface CookieStatus {
   lastVerifiedAt?: string;
   validity: 'valid' | 'possibly_expired' | 'verification_failed' | 'not_imported';
   browserRunning?: boolean;
+  migrationRequired?: boolean;
 }
 
 export interface RuntimeToolStatus {

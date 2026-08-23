@@ -27,6 +27,8 @@ export function Settings() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [testingCookie, setTestingCookie] = useState(false);
   const [importingSnapshot, setImportingSnapshot] = useState(false);
+  const [authorizing, setAuthorizing] = useState(false);
+  const [authWindowOpen, setAuthWindowOpen] = useState(false);
   const [cookieConnectivity, setCookieConnectivity] = useState<ConnectivityStatus | null>(null);
 
   // 初始加载 Cookie 状态
@@ -101,6 +103,50 @@ export function Settings() {
     }
   };
 
+  const startYoutubeAuth = async () => {
+    if (!window.desktop) {
+      notify('专用 Chrome 授权仅在桌面版可用');
+      return;
+    }
+    setAuthorizing(true);
+    try {
+      await window.desktop.startYoutubeAuth();
+      setAuthWindowOpen(true);
+      notify('专用 Chrome 已打开；登录 YouTube 后回到这里完成授权');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '专用 Chrome 启动失败');
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
+  const completeYoutubeAuth = async () => {
+    if (!window.desktop) return;
+    setAuthorizing(true);
+    setCookieConnectivity(null);
+    try {
+      const status = await window.desktop.completeYoutubeAuth();
+      setCookieStatus(status);
+      setAuthWindowOpen(false);
+      notify('YouTube 登录状态已安全保存；日常 Chrome 无需关闭');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'YouTube 授权保存失败');
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
+  const cancelYoutubeAuth = async () => {
+    if (!window.desktop) return;
+    setAuthorizing(true);
+    try {
+      await window.desktop.cancelYoutubeAuth();
+      setAuthWindowOpen(false);
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const testCookieConfiguration = async () => {
     setTestingCookie(true);
     setCookieConnectivity(null);
@@ -153,7 +199,10 @@ export function Settings() {
             {cookieStatus?.source === 'snapshot' && (
               <span className="text-sm text-gray-600 dark:text-gray-400">来源: Chrome 快照</span>
             )}
-            {cookieStatus?.updatedAt && cookieStatus.source !== 'snapshot' && (
+            {cookieStatus?.source === 'managed' && (
+              <span className="text-sm text-gray-600 dark:text-gray-400">来源: 应用专用 Chrome 登录</span>
+            )}
+            {cookieStatus?.updatedAt && cookieStatus.source !== 'snapshot' && cookieStatus.source !== 'managed' && (
               <span className="text-xs text-gray-400 dark:text-gray-500">
                 更新于 {new Date(cookieStatus.updatedAt).toLocaleString('zh-CN')}
               </span>
@@ -167,78 +216,107 @@ export function Settings() {
           </button>
         </div>
 
-        {/* 推荐：一次性导入 Chrome 快照 */}
+        {cookieStatus?.migrationRequired && (
+          <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
+            已停用旧版“每次直读 Chrome”配置，避免 Chrome 打开时反复报错。请完成一次下面的独立授权。
+          </div>
+        )}
+
+        {/* 推荐：应用管理的独立 YouTube 登录 */}
         <div className="mb-4 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-950/20 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">推荐：Chrome Cookie 快照</h3>
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">推荐：专用 Chrome 登录</h3>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                只在导入或刷新时关闭 Chrome；导入后解析和下载使用本机受保护的快照文件。
+                应用使用独立的 Chrome 登录空间，不读取日常 Chrome；授权和下载时都不需要关闭你正在使用的浏览器。
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void importChromeSnapshot()}
-              disabled={loading || testingCookie || importingSnapshot || cookieStatus?.browserRunning === true}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
-            >
-              {importingSnapshot
-                ? '正在安全导入…'
-                : cookieStatus?.source === 'snapshot'
-                  ? '关闭 Chrome 并刷新快照'
-                  : '关闭 Chrome 并导入 Cookie 快照'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {!authWindowOpen ? (
+                <button
+                  type="button"
+                  onClick={() => void startYoutubeAuth()}
+                  disabled={loading || testingCookie || importingSnapshot || authorizing}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-40"
+                >
+                  {authorizing ? '正在打开…' : cookieStatus?.source === 'managed' ? '重新打开专用登录' : '打开专用登录窗口'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void completeYoutubeAuth()}
+                    disabled={authorizing}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-40"
+                  >
+                    {authorizing ? '正在保存…' : '我已登录，完成授权'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void cancelYoutubeAuth()}
+                    disabled={authorizing}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm disabled:opacity-40"
+                  >
+                    取消
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
             <p>当前状态：<span className={cookieValidityClass(cookieStatus)}>{cookieValidityLabel(cookieStatus)}</span></p>
-            <p>
-              Chrome：{cookieStatus?.browserRunning === true
-                ? <span className="text-amber-600 dark:text-amber-400">正在运行，请完全关闭后导入</span>
-                : cookieStatus?.browserRunning === false
-                  ? <span className="text-green-600 dark:text-green-400">已关闭，可以导入或刷新</span>
-                  : <span>无法自动判断，请确认已完全关闭</span>}
-            </p>
-            <p>最近导入：{formatCookieTime(cookieStatus?.importedAt)}</p>
+            <p>日常 Chrome：<span className="text-green-600 dark:text-green-400">无需关闭</span></p>
+            <p>最近授权：{formatCookieTime(cookieStatus?.importedAt)}</p>
             <p>最近验证：{formatCookieTime(cookieStatus?.lastVerifiedAt)}</p>
           </div>
-          {cookieStatus?.source === 'snapshot' && (
+          {cookieStatus?.source === 'managed' && (
             <p className="mt-2 text-xs text-green-700 dark:text-green-400">
-              当前解析与下载使用快照，不再持续读取 Chrome 数据库。Cookie 失效时再关闭 Chrome 刷新一次即可。
+              当前解析与下载使用应用保存的专用登录状态，不会占用或锁定日常 Chrome。
             </p>
           )}
         </div>
 
-        {/* 浏览器配置 */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            兼容方式：每次从浏览器直接读取
-          </label>
-          <div className="flex gap-2">
-            {['chrome', 'edge', 'firefox', 'brave'].map((b) => (
+        <details className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">
+            高级兼容方式（可能要求关闭浏览器）
+          </summary>
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">旧版 Chrome 快照</p>
               <button
-                key={b}
-                onClick={() => handleBrowserConfig(b)}
-                disabled={loading || testingCookie || importingSnapshot}
-                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-40 capitalize"
+                type="button"
+                onClick={() => void importChromeSnapshot()}
+                disabled={loading || testingCookie || importingSnapshot || cookieStatus?.browserRunning === true}
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm disabled:opacity-40"
               >
-                {b}
+                {importingSnapshot ? '正在导入…' : '关闭 Chrome 并导入快照'}
               </button>
-            ))}
+            </div>
+            <div>
+              <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">每次从浏览器直接读取</p>
+              <div className="flex flex-wrap gap-2">
+                {['chrome', 'edge', 'firefox', 'brave'].map((b) => (
+                  <button
+                    key={b}
+                    onClick={() => handleBrowserConfig(b)}
+                    disabled={loading || testingCookie || importingSnapshot || authorizing}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-40 capitalize"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <FileUpload
+              onUploaded={(status) => {
+                setCookieStatus(status);
+                setCookieConnectivity(null);
+              }}
+              disabled={loading || testingCookie || importingSnapshot || authorizing}
+            />
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-            此方式每次解析或下载都可能要求关闭浏览器；Chrome 用户优先使用上面的快照。
-          </p>
-        </div>
-
-        {/* 文件配置 */}
-        <FileUpload
-          onUploaded={(status) => {
-            setCookieStatus(status);
-            setCookieConnectivity(null);
-          }}
-          disabled={loading || testingCookie || importingSnapshot}
-        />
+        </details>
 
         {/* 验证与清除 */}
         {cookieStatus?.configured && (
@@ -1060,14 +1138,14 @@ function StatusBadge({ status }: { status: CookieStatus | null }) {
       </span>
     );
   }
-  if (status.source === 'snapshot') {
+  if (status.source === 'snapshot' || status.source === 'managed') {
     return (
       <span className={`text-xs px-2 py-0.5 rounded-full ${
         status.validity === 'valid'
           ? 'bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400'
           : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
       }`}>
-        Chrome 快照
+        {status.source === 'managed' ? '专用登录' : 'Chrome 快照'}
       </span>
     );
   }
@@ -1079,7 +1157,7 @@ function StatusBadge({ status }: { status: CookieStatus | null }) {
 }
 
 function cookieValidityLabel(status: CookieStatus | null): string {
-  if (!status || status.source !== 'snapshot') return '尚未导入';
+  if (!status || (status.source !== 'snapshot' && status.source !== 'managed')) return '尚未授权';
   switch (status.validity) {
     case 'valid': return '有效';
     case 'possibly_expired': return '可能失效，建议刷新或重新验证';
@@ -1089,9 +1167,10 @@ function cookieValidityLabel(status: CookieStatus | null): string {
 }
 
 function cookieValidityClass(status: CookieStatus | null): string {
-  return status?.source === 'snapshot' && status.validity === 'valid'
+  const managedSource = status?.source === 'snapshot' || status?.source === 'managed';
+  return managedSource && status?.validity === 'valid'
     ? 'text-green-600 dark:text-green-400'
-    : status?.source === 'snapshot'
+    : managedSource
       ? 'text-amber-600 dark:text-amber-400'
       : 'text-gray-500 dark:text-gray-400';
 }

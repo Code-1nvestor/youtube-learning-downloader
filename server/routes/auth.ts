@@ -22,7 +22,7 @@ import type {
 import { AppError } from '../types/errors.ts';
 import { ok } from '../types/result.ts';
 
-export function createAuthRouter(cookieService: CookieService): Router {
+export function createAuthRouter(cookieService: CookieService, desktopApiToken = ''): Router {
   const router = Router();
 
   // -- 查询状态 --
@@ -39,6 +39,22 @@ export function createAuthRouter(cookieService: CookieService): Router {
         throw new AppError('MISSING_PARAM', '请求体需包含 content 字段（Cookie 文件内容）');
       }
       cookieService.setFromFile(body.content);
+      res.json(ok(cookieService.getStatus()));
+    }),
+  );
+
+  // 仅桌面主进程可写入专用登录 Cookie，Cookie 内容不会进入渲染进程。
+  router.post(
+    '/cookie/managed',
+    asyncHandler(async (req, res) => {
+      if (!desktopApiToken || req.get('x-desktop-token') !== desktopApiToken) {
+        throw new AppError('PATH_NOT_ALLOWED', '仅桌面应用可以保存专用登录状态', undefined, 403);
+      }
+      const body = req.body as SetCookieFileRequest;
+      if (!body?.content || typeof body.content !== 'string') {
+        throw new AppError('MISSING_PARAM', '请求体需包含 content 字段（Cookie 文件内容）');
+      }
+      cookieService.setFromManagedBrowser(body.content);
       res.json(ok(cookieService.getStatus()));
     }),
   );

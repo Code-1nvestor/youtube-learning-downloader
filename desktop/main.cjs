@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell, Tray } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const fs = require('node:fs');
@@ -19,6 +19,8 @@ const { createCloseGuard, formatActiveTaskSummary } = require('./close-guard.cjs
 const { createTaskMonitor } = require('./task-monitor.cjs');
 const { createDataBackupActions } = require('./data-backup.cjs');
 const { createAppRestarter } = require('./app-restart.cjs');
+const { createWindowVisibilityController } = require('./window-lifecycle.cjs');
+const { createYouTubeAuthController } = require('./youtube-auth.cjs');
 
 let mainWindow = null;
 let backendProcess = null;
@@ -27,6 +29,10 @@ let shuttingDown = false;
 let appOrigin = null;
 let downloadActions = null;
 let taskMonitor = null;
+let tray = null;
+let quitGuard = null;
+let windowVisibility = null;
+let youtubeAuth = null;
 const activeNotifications = new Set();
 
 // 固定端口可让 localStorage / Service Worker 等浏览器数据跨启动复用。
@@ -235,7 +241,7 @@ function createWindow(url) {
   });
   mainWindow = window;
 
-  const closeGuard = createCloseGuard({
+  quitGuard = createCloseGuard({
     loadQueueStatus: () => loadLocalApiData('/api/queue'),
     confirmClose: async ({ statusKnown, summary }) => {
       const result = await dialog.showMessageBox(window, {
@@ -254,13 +260,23 @@ function createWindow(url) {
       });
       return result.response === 1;
     },
-    approveClose: () => window.close(),
+    approveClose: () => {
+      shuttingDown = true;
+      void Promise.resolve(youtubeAuth?.close()).finally(() => app.quit());
+    },
     onError: (error) => console.error('[desktop] 关闭保护检查失败:', error),
   });
 
+  windowVisibility = createWindowVisibilityController({
+    getWindow: () => mainWindow,
+    onFirstHide: () => showDesktopNotification({
+      title: '学习资料下载器仍在运行',
+      body: '窗口已隐藏到右下角托盘；下载会继续，右键托盘图标可退出。',
+    }),
+  });
   window.once('ready-to-show', () => window.show());
   window.on('close', (event) => {
-    if (!shuttingDown) closeGuard.handleClose(event);
+    windowVisibility?.handleClose(event, shuttingDown);
   });
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
@@ -273,6 +289,18 @@ function createWindow(url) {
     if (appOrigin && new URL(targetUrl).origin !== appOrigin) event.preventDefault();
   });
   void window.loadURL(url);
+}
+
+function createTray() {
+  tray?.destroy();
+  tray = new Tray(path.join(__dirname, 'icon.ico'));
+  tray.setToolTip(`学习资料下载器 v${appVersion}`);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '打开主界面', click: () => windowVisibility?.showWindow() },
+    { type: 'separator' },
+    { label: '退出应用', click: () => void quitGuard?.requestClose() },
+  ]));
+  tray.on('click', () => windowVisibility?.showWindow());
 }
 
 function updateTaskbar(progress) {
@@ -323,6 +351,9 @@ function startTaskMonitor() {
 
 function registerIpcHandlers() {
   const appDataPath = app.getPath('userData');
+  youtubeAuth = createYouTubeAuthController({
+    profileDir: path.join(appDataPath, 'youtube-auth-profile'),
+  });
   const diagnosticActions = createDiagnosticActions({
     loadApi: loadLocalApiData,
     showSaveDialog: (options) => (
@@ -392,6 +423,23 @@ function registerIpcHandlers() {
 
   ipcMain.handle('desktop:get-app-version', () => appVersion);
 
+  ipcMain.handle('desktop:start-youtube-auth', async () => youtubeAuth.start());
+
+  ipcMain.handle('desktop:complete-youtube-auth', async () => {
+    const content = await youtubeAuth.exportCookies();
+    const status = await loadLocalApiData('/api/auth/cookie/managed', {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+    await youtubeAuth.close();
+    return status;
+  });
+
+  ipcMain.handle('desktop:cancel-youtube-auth', async () => {
+    await youtubeAuth.close();
+    return true;
+  });
+
   ipcMain.handle('desktop:select-directory', async () => {
     const options = {
       title: '选择下载目录',
@@ -433,8 +481,9 @@ function registerIpcHandlers() {
     return downloadActions.revealDownload(taskId);
   });
 
-  ipcMain.handle('desktop:restart-app', () => {
+  ipcMain.handle('desktop:restart-app', async () => {
     shuttingDown = true;
+    await youtubeAuth?.close();
     app.relaunch();
     app.quit();
     return true;
@@ -444,7 +493,9 @@ function registerIpcHandlers() {
 async function loadLocalApiData(route, init = {}) {
   if (!appOrigin) throw new Error('本机服务尚未启动');
   const headers = { ...(init.headers ?? {}) };
-  if (route.startsWith('/api/backup')) headers['x-desktop-token'] = desktopApiToken;
+  if (route.startsWith('/api/backup') || route === '/api/auth/cookie/managed') {
+    headers['x-desktop-token'] = desktopApiToken;
+  }
   if (init.body && !headers['content-type']) headers['content-type'] = 'application/json';
   const response = await fetch(`${appOrigin}${route}`, { ...init, headers });
   const payload = await response.json();
@@ -474,6 +525,7 @@ async function startDesktopApp() {
   await waitForHealth(`${appOrigin}/api/health`);
   await clearDesktopWebCaches(session.defaultSession, appOrigin);
   createWindow(appOrigin);
+  createTray();
   startTaskMonitor();
 }
 
@@ -498,10 +550,13 @@ if (hasSingleInstanceLock) {
     taskMonitor?.stop();
     taskMonitor = null;
     activeNotifications.clear();
+    void youtubeAuth?.close();
+    tray?.destroy();
+    tray = null;
     stopBackend();
   });
 
   app.on('window-all-closed', () => {
-    if (!shuttingDown) app.quit();
+    if (shuttingDown) app.quit();
   });
 }

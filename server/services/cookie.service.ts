@@ -39,6 +39,7 @@ export class CookieService {
   private static readonly COOKIE_DIR = '.cookies';
   private static readonly COOKIE_FILE = 'cookies.txt';
   private static readonly SNAPSHOT_FILE = 'chrome-snapshot.txt';
+  private static readonly MANAGED_FILE = 'youtube-auth.txt';
   private static readonly POSSIBLY_EXPIRED_MS = 7 * 24 * 60 * 60 * 1000;
 
   private source: CookieSourceType = 'none';
@@ -48,6 +49,7 @@ export class CookieService {
   private importedAt?: string;
   private lastVerifiedAt?: string;
   private validity: CookieValidity = 'not_imported';
+  private migrationRequired = false;
   private readonly cookieDir: string;
   private readonly configFilePath: string;
 
@@ -74,6 +76,7 @@ export class CookieService {
     if (this.updatedAt) status.updatedAt = this.updatedAt;
     if (this.importedAt) status.importedAt = this.importedAt;
     if (this.lastVerifiedAt) status.lastVerifiedAt = this.lastVerifiedAt;
+    if (this.migrationRequired) status.migrationRequired = true;
     return status;
   }
 
@@ -95,7 +98,7 @@ export class CookieService {
     if (this.source === 'browser' && this.browser) {
       return { flag: '--cookies-from-browser', value: this.browser };
     }
-    if (this.source === 'snapshot' && this.cookieFilePath) {
+    if ((this.source === 'snapshot' || this.source === 'managed') && this.cookieFilePath) {
       return { flag: '--cookies', value: this.cookieFilePath };
     }
     return undefined;
@@ -129,6 +132,7 @@ export class CookieService {
     this.importedAt = undefined;
     this.lastVerifiedAt = undefined;
     this.validity = 'not_imported';
+    this.migrationRequired = false;
     this.persistMetadata();
   }
 
@@ -154,6 +158,28 @@ export class CookieService {
     this.importedAt = undefined;
     this.lastVerifiedAt = undefined;
     this.validity = 'not_imported';
+    this.migrationRequired = false;
+    this.persistMetadata();
+  }
+
+  /** 保存由桌面专用 Chrome 登录空间导出的 YouTube Cookie。 */
+  setFromManagedBrowser(content: string): void {
+    this.validateNetscapeFormat(content);
+    fs.mkdirSync(this.cookieDir, { recursive: true });
+    const filePath = path.resolve(this.cookieDir, CookieService.MANAGED_FILE);
+    const protection = writeSensitiveTextFileSync(filePath, content);
+    if (!protection.protected) {
+      console.warn('[cookie] 专用登录 Cookie 已保存，但当前系统未能完整应用仅当前账号可读权限');
+    }
+    const now = (this.options.now?.() ?? new Date()).toISOString();
+    this.source = 'managed';
+    this.browser = 'chrome';
+    this.cookieFilePath = filePath;
+    this.updatedAt = now;
+    this.importedAt = now;
+    this.lastVerifiedAt = undefined;
+    this.validity = 'valid';
+    this.migrationRequired = false;
     this.persistMetadata();
   }
 
@@ -198,6 +224,7 @@ export class CookieService {
       this.importedAt = now;
       this.lastVerifiedAt = now;
       this.validity = 'valid';
+      this.migrationRequired = false;
       this.persistMetadata();
 
       if (movedOld) fs.rmSync(backupPath, { force: true });
@@ -214,7 +241,7 @@ export class CookieService {
   }
 
   recordVerification(success: boolean, cookieRejected = false): void {
-    if (this.source !== 'snapshot') return;
+    if (this.source !== 'snapshot' && this.source !== 'managed') return;
     this.lastVerifiedAt = (this.options.now?.() ?? new Date()).toISOString();
     this.validity = success ? 'valid' : cookieRejected ? 'verification_failed' : 'possibly_expired';
     this.persistMetadata();
@@ -236,7 +263,8 @@ export class CookieService {
     this.importedAt = undefined;
     this.lastVerifiedAt = undefined;
     this.validity = 'not_imported';
-    for (const fileName of [CookieService.COOKIE_FILE, CookieService.SNAPSHOT_FILE]) {
+    this.migrationRequired = false;
+    for (const fileName of [CookieService.COOKIE_FILE, CookieService.SNAPSHOT_FILE, CookieService.MANAGED_FILE]) {
       try {
         fs.rmSync(path.resolve(this.cookieDir, fileName), { force: true });
       } catch {
@@ -259,12 +287,14 @@ export class CookieService {
     fs.writeFileSync(
       this.configFilePath,
       JSON.stringify({
+        schemaVersion: 2,
         source: this.source,
         ...(this.browser ? { browser: this.browser } : {}),
         updatedAt: this.updatedAt,
         importedAt: this.importedAt,
         lastVerifiedAt: this.lastVerifiedAt,
         validity: this.validity,
+        migrationRequired: this.migrationRequired,
       }),
       { encoding: 'utf8', mode: 0o600 },
     );
@@ -274,12 +304,14 @@ export class CookieService {
     if (!fs.existsSync(this.configFilePath)) return;
     try {
       const saved = JSON.parse(fs.readFileSync(this.configFilePath, 'utf8')) as {
+        schemaVersion?: number;
         source?: CookieSourceType;
         browser?: BrowserCookieName;
         updatedAt?: string;
         importedAt?: string;
         lastVerifiedAt?: string;
         validity?: CookieValidity;
+        migrationRequired?: boolean;
       };
       if (saved.source === 'file') {
         const filePath = path.resolve(this.cookieDir, CookieService.COOKIE_FILE);
@@ -287,7 +319,7 @@ export class CookieService {
         this.validateNetscapeFormat(content);
         this.source = 'file';
         this.cookieFilePath = filePath;
-      } else if (saved.source === 'browser' && saved.browser) {
+      } else if (saved.source === 'browser' && saved.browser && saved.schemaVersion === 2) {
         if (saved.browser === 'safari' && !process.platform.startsWith('darwin')) return;
         this.source = 'browser';
         this.browser = saved.browser;
@@ -298,11 +330,27 @@ export class CookieService {
         this.source = 'snapshot';
         this.browser = saved.browser;
         this.cookieFilePath = filePath;
+      } else if (saved.source === 'managed') {
+        const filePath = path.resolve(this.cookieDir, CookieService.MANAGED_FILE);
+        const content = fs.readFileSync(filePath, 'utf8');
+        this.validateNetscapeFormat(content);
+        this.source = 'managed';
+        this.browser = 'chrome';
+        this.cookieFilePath = filePath;
+      } else if (saved.source === 'browser' && saved.browser) {
+        // 0.23.x 的直读模式在 Chrome 运行时会反复失败。升级后停用并引导迁移一次。
+        this.source = 'none';
+        this.browser = saved.browser;
+        this.migrationRequired = true;
       }
       this.updatedAt = saved.updatedAt;
       this.importedAt = saved.importedAt;
       this.lastVerifiedAt = saved.lastVerifiedAt;
-      this.validity = saved.validity ?? (saved.source === 'snapshot' ? 'possibly_expired' : 'not_imported');
+      this.validity = saved.validity ?? (
+        saved.source === 'snapshot' || saved.source === 'managed' ? 'possibly_expired' : 'not_imported'
+      );
+      this.migrationRequired ||= saved.migrationRequired === true;
+      if (saved.source === 'browser' && saved.schemaVersion !== 2) this.persistMetadata();
     } catch (error) {
       console.warn('[cookie] 已保存的 Cookie 配置不可用，将忽略:', error);
     }
@@ -361,7 +409,7 @@ export class CookieService {
   }
 
   private currentValidity(): CookieValidity {
-    if (this.source !== 'snapshot' || !this.importedAt) return 'not_imported';
+    if ((this.source !== 'snapshot' && this.source !== 'managed') || !this.importedAt) return 'not_imported';
     if (this.validity !== 'valid') return this.validity;
     const importedAt = Date.parse(this.importedAt);
     const now = (this.options.now?.() ?? new Date()).getTime();
@@ -379,6 +427,7 @@ export class CookieService {
       importedAt: this.importedAt,
       lastVerifiedAt: this.lastVerifiedAt,
       validity: this.validity,
+      migrationRequired: this.migrationRequired,
     };
   }
 
@@ -390,6 +439,7 @@ export class CookieService {
     this.importedAt = state.importedAt;
     this.lastVerifiedAt = state.lastVerifiedAt;
     this.validity = state.validity;
+    this.migrationRequired = state.migrationRequired;
   }
 }
 
