@@ -54,16 +54,24 @@ test('actual format choices ignore storyboard-like entries and duplicate IDs', (
 });
 
 test('preset selectors prefer streams compatible with the requested container', () => {
+  const formats = [
+    { formatId: '137', container: 'mp4', qualityLabel: '1080p', resolution: '1920x1080', hasVideo: true, hasAudio: false },
+    { formatId: '136', container: 'mp4', qualityLabel: '720p', resolution: '1280x720', hasVideo: true, hasAudio: false },
+    { formatId: '401', container: 'webm', qualityLabel: '2160p', resolution: '3840x2160', hasVideo: true, hasAudio: false },
+    { formatId: '251', container: 'webm', qualityLabel: 'audio only', filesize: 20_000_000, hasVideo: false, hasAudio: true },
+    { formatId: '140', container: 'm4a', qualityLabel: 'audio only', filesize: 18_000_000, hasVideo: false, hasAudio: true },
+  ];
   assert.equal(
-    buildPresetFormatSelector('720p', 'mp4'),
-    'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4][height<=720]+bestaudio/best[ext=mp4][height<=720]',
+    buildPresetFormatSelector('720p', 'mp4', formats),
+    '136+bestaudio[ext=m4a]/136+bestaudio',
   );
   assert.equal(
-    buildPresetFormatSelector('highest', 'webm'),
-    'bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo[ext=webm]+bestaudio/best[ext=webm]/bestvideo+bestaudio/best/best',
+    buildPresetFormatSelector('highest', 'webm', formats),
+    '401+bestaudio[ext=webm]/401+bestaudio',
   );
-  assert.match(buildPresetFormatSelector('4320p', 'webm'), /height<=4320/);
-  assert.equal(buildPresetFormatSelector('1080p', 'mp3'), 'bestaudio/best');
+  assert.equal(buildPresetFormatSelector('4320p', 'webm', formats), '401+bestaudio[ext=webm]/401+bestaudio');
+  assert.equal(buildPresetFormatSelector('1080p', 'mp3', formats), '251');
+  assert.throws(() => buildPresetFormatSelector('highest', 'webm'), /实际格式/);
 });
 
 test('WebM presets use real formats and fall back to transcoding when cookies expose only MP4', () => {

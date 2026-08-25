@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { access, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +15,14 @@ const liveEnabled = process.env.YLD_E2E_LIVE === '1';
 const keepArtifacts = process.env.YLD_E2E_KEEP === '1';
 const cookieBrowser = process.env.YLD_E2E_COOKIE_BROWSER?.trim().toLowerCase() ?? '';
 const cookieSnapshotBrowser = process.env.YLD_E2E_COOKIE_SNAPSHOT?.trim().toLowerCase() ?? '';
-const testVideoId = 'YE7VzlLtp-4';
+const cookieSeedDir = process.env.YLD_E2E_COOKIE_SEED_DIR?.trim()
+  ? path.resolve(process.env.YLD_E2E_COOKIE_SEED_DIR.trim())
+  : null;
+const testVideoId = process.env.YLD_E2E_VIDEO_ID?.trim() || 'YE7VzlLtp-4';
+if (!/^[A-Za-z0-9_-]{11}$/.test(testVideoId)) {
+  console.error('YLD_E2E_VIDEO_ID must be an 11-character YouTube video ID.');
+  process.exit(2);
+}
 const testVideoUrl = `https://www.youtube.com/watch?v=${testVideoId}`;
 
 if (!liveEnabled) {
@@ -32,8 +39,8 @@ if (cookieSnapshotBrowser && cookieSnapshotBrowser !== 'chrome') {
   console.error('YLD_E2E_COOKIE_SNAPSHOT currently supports only chrome.');
   process.exit(2);
 }
-if (cookieBrowser && cookieSnapshotBrowser) {
-  console.error('Choose either YLD_E2E_COOKIE_BROWSER or YLD_E2E_COOKIE_SNAPSHOT, not both.');
+if ([cookieBrowser, cookieSnapshotBrowser, cookieSeedDir].filter(Boolean).length > 1) {
+  console.error('Choose only one E2E Cookie source.');
   process.exit(2);
 }
 
@@ -51,6 +58,12 @@ const serverLogs = [];
 let serverProcess;
 
 await mkdir(downloadDir, { recursive: true });
+if (cookieSeedDir) {
+  const targetCookieDir = path.join(tempDir, '.cookies');
+  await mkdir(targetCookieDir, { recursive: true });
+  await copyFile(path.join(cookieSeedDir, 'config.json'), path.join(targetCookieDir, 'config.json'));
+  await copyFile(path.join(cookieSeedDir, 'youtube-auth.txt'), path.join(targetCookieDir, 'youtube-auth.txt'));
+}
 
 function appendLog(chunk) {
   serverLogs.push(String(chunk));
@@ -199,7 +212,7 @@ try {
       body: JSON.stringify({ browser: cookieBrowser }),
     });
   }
-  let cookieSource = cookieBrowser ? 'browser' : 'none';
+  let cookieSource = cookieSeedDir ? 'managed' : cookieBrowser ? 'browser' : 'none';
   if (cookieSnapshotBrowser) {
     const snapshot = await apiRequest(baseUrl, '/api/auth/cookie/snapshot', {
       method: 'POST',

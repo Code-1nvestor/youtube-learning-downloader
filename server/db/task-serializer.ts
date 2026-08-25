@@ -5,7 +5,12 @@
  * 布尔值 auto_subtitle 以 INTEGER(0/1) 存储。
  */
 
-import type { DownloadTask, DownloadStatus } from '../types/download.ts';
+import type {
+  DownloadAuthenticationMode,
+  DownloadAccessMode,
+  DownloadTask,
+  DownloadStatus,
+} from '../types/download.ts';
 
 /** SQLite 参数值类型（与 node:sqlite 的 SQLInputValue 对齐） */
 export type SqlValue = null | number | string | bigint | Uint8Array;
@@ -18,6 +23,8 @@ export interface TaskRow {
   playlist_title: string | null;
   playlist_index: number | null;
   format_id: string;
+  authentication: string;
+  access_mode: string;
   container: string;
   output_path: string;
   subtitle_langs: string;
@@ -49,6 +56,8 @@ export function taskToRow(task: DownloadTask): Record<string, SqlValue> {
     $playlist_title: task.playlistTitle ?? null,
     $playlist_index: task.playlistIndex ?? null,
     $format_id: task.formatId,
+    $authentication: task.authentication ?? 'auto',
+    $access_mode: task.accessMode ?? 'direct',
     $container: task.container,
     $output_path: task.outputPath,
     $subtitle_langs: JSON.stringify(task.subtitleLangs),
@@ -81,6 +90,8 @@ export function rowToTask(row: TaskRow): DownloadTask {
     ...(row.playlist_title ? { playlistTitle: row.playlist_title } : {}),
     ...(row.playlist_index != null ? { playlistIndex: row.playlist_index } : {}),
     formatId: row.format_id,
+    authentication: normalizeAuthentication(row.authentication),
+    accessMode: normalizeAccessMode(row.access_mode),
     container: row.container,
     outputPath: row.output_path,
     subtitleLangs: safeParseJson(row.subtitle_langs, []),
@@ -101,6 +112,14 @@ export function rowToTask(row: TaskRow): DownloadTask {
     createdAt: row.created_at,
     ...(row.completed_at ? { completedAt: row.completed_at } : {}),
   };
+}
+
+function normalizeAuthentication(value: string | undefined): DownloadAuthenticationMode {
+  return value === 'anonymous' || value === 'cookie' ? value : 'auto';
+}
+
+function normalizeAccessMode(value: string | undefined): DownloadAccessMode {
+  return value === 'pot' ? 'pot' : 'direct';
 }
 
 function safeParseJson<T>(s: string, fallback: T): T {

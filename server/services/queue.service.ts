@@ -270,6 +270,8 @@ export class QueueService {
         ...(input.playlistTitle ? { playlistTitle: input.playlistTitle } : {}),
         ...(input.playlistIndex ? { playlistIndex: input.playlistIndex } : {}),
         formatId: input.formatId ?? this.defaultFormatSelector(container),
+        authentication: input.authentication ?? 'auto',
+        accessMode: input.accessMode ?? 'direct',
         container,
         outputPath,
         subtitleLangs: input.subtitleLangs ?? [],

@@ -275,6 +275,8 @@ function validateBackupTask(input: unknown, index: number): DownloadTask {
     videoId: requireString(task.videoId, `tasks[${index}].videoId`, 128),
     title: requireString(task.title, `tasks[${index}].title`, 1_000),
     formatId: requireString(task.formatId, `tasks[${index}].formatId`, 2_048),
+    authentication: normalizeBackupAuthentication(task.authentication, index),
+    accessMode: normalizeBackupAccessMode(task.accessMode, index),
     container,
     outputPath,
     subtitleLangs,
@@ -306,6 +308,24 @@ function validateBackupTask(input: unknown, index: number): DownloadTask {
   const completedAt = optionalIsoDate(task.completedAt, `tasks[${index}].completedAt`);
   if (completedAt) result.completedAt = completedAt;
   return result;
+}
+
+function normalizeBackupAuthentication(
+  value: unknown,
+  taskIndex: number,
+): DownloadTask['authentication'] {
+  if (value === undefined) return 'auto';
+  if (value === 'anonymous' || value === 'cookie' || value === 'auto') return value;
+  throw new AppError('INVALID_PARAM', `tasks[${taskIndex}].authentication 格式不正确`);
+}
+
+function normalizeBackupAccessMode(
+  value: unknown,
+  taskIndex: number,
+): DownloadTask['accessMode'] {
+  if (value === undefined || value === 'direct') return 'direct';
+  if (value === 'pot') return 'pot';
+  throw new AppError('INVALID_PARAM', `tasks[${taskIndex}].accessMode 格式不正确`);
 }
 
 function sanitizeRestoredTask(task: DownloadTask, restoreRoot: string): DownloadTask {

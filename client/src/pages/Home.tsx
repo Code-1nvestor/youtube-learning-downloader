@@ -247,6 +247,8 @@ function SingleVideoDownload({
       const task: CreateDownloadTaskInput = {
         videoId: video.id,
         title: video.title,
+        authentication: video.authentication ?? 'auto',
+        accessMode: video.accessMode ?? 'direct',
         ...(video.playlistTitle ? { playlistTitle: video.playlistTitle } : {}),
         ...(video.playlistIndex ? { playlistIndex: video.playlistIndex } : {}),
         container: outputContainer,
@@ -271,6 +273,8 @@ function SingleVideoDownload({
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
       <VideoCard video={video} />
+
+      <AuthenticationNotice authentication={video.authentication} accessMode={video.accessMode} />
 
       <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-800">
         <div className="grid grid-cols-2 gap-4">
@@ -604,26 +608,29 @@ function MultiVideoDownload({
       return;
     }
 
-    const tasks: CreateDownloadTaskInput[] = selectedIndices
-      .map((i) => {
-        const v = videos[i]!;
-        return {
-          videoId: v.id,
-          title: v.title,
-          ...(v.playlistTitle ? { playlistTitle: v.playlistTitle } : {}),
-          ...(v.playlistIndex ? { playlistIndex: v.playlistIndex } : {}),
+    setSubmitting(true);
+    try {
+      // 播放列表的扁平结果没有格式详情。逐条解析后再入队，保证每个任务
+      // 保存真实视频格式 ID 及同一访问策略，不允许运行时重新选择低画质。
+      const tasks: CreateDownloadTaskInput[] = [];
+      for (const index of selectedIndices) {
+        const video = videos[index]!;
+        const details = await api.getFormats(`https://www.youtube.com/watch?v=${video.id}`);
+        tasks.push({
+          videoId: video.id,
+          title: video.title,
+          authentication: details.authentication ?? 'auto',
+          accessMode: details.accessMode ?? 'direct',
+          ...(video.playlistTitle ? { playlistTitle: video.playlistTitle } : {}),
+          ...(video.playlistIndex ? { playlistIndex: video.playlistIndex } : {}),
           container,
-          formatId: buildPresetFormatSelector(quality, container, v.formats),
+          formatId: buildPresetFormatSelector(quality, container, details.formats),
           subtitleLangs: parseSubtitleLanguages(compatibleSubtitleMode, subtitleLangs),
           subtitleMode: compatibleSubtitleMode,
           autoSubtitle: compatibleSubtitleMode !== 'none' && autoSubtitle,
-        };
-      });
-
-    if (tasks.length === 0) return;
-
-    setSubmitting(true);
-    try {
+        });
+      }
+      if (tasks.length === 0) return;
       const message = await submitDownloadTasks(tasks, notify);
       if (message) onDownloaded(message);
     } catch (e) {
@@ -769,6 +776,32 @@ function MultiVideoDownload({
       </div>
     </div>
   );
+}
+
+function AuthenticationNotice({
+  authentication,
+  accessMode,
+}: {
+  authentication: ResolveResult['videos'][number]['authentication'];
+  accessMode: ResolveResult['videos'][number]['accessMode'];
+}) {
+  if (authentication === 'anonymous') {
+    return (
+      <p className="text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/30 rounded-lg px-3 py-2">
+        {accessMode === 'pot'
+          ? '匿名 + PO Token：下载将复用同一访问策略和实际格式 ID，Cookie 不参与公共视频。'
+          : '匿名直接解析：下载将保持当前实际格式 ID，不会因 Cookie 静默降低画质。'}
+      </p>
+    );
+  }
+  if (authentication === 'cookie') {
+    return (
+      <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2">
+        匿名解析受限，已按需使用 Cookie{accessMode === 'pot' ? ' + PO Token' : ''}；下载仍锁定当前实际格式 ID。
+      </p>
+    );
+  }
+  return null;
 }
 
 // ==========================================

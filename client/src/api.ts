@@ -32,6 +32,8 @@ type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 export interface VideoInfo {
   id: string;
   title: string;
+  authentication?: 'anonymous' | 'cookie';
+  accessMode?: 'pot' | 'direct';
   duration?: number;
   thumbnails: { url: string; width?: number; height?: number }[];
   uploadDate?: string;
@@ -109,6 +111,8 @@ export interface DownloadTask {
   playlistTitle?: string;
   playlistIndex?: number;
   formatId: string;
+  authentication?: 'anonymous' | 'cookie' | 'auto';
+  accessMode?: 'pot' | 'direct';
   container: string;
   outputPath: string;
   subtitleLangs: string[];
@@ -172,6 +176,8 @@ export interface HealthStatus {
   runtime: {
     ytDlp: RuntimeToolStatus;
     deno: RuntimeToolStatus;
+    ejs?: RuntimeToolStatus;
+    poTokenProvider?: RuntimeToolStatus;
     ffmpeg: RuntimeToolStatus;
   };
 }
@@ -221,6 +227,8 @@ export interface CreateDownloadTaskInput {
   playlistTitle?: string;
   playlistIndex?: number;
   formatId?: string;
+  authentication?: 'anonymous' | 'cookie' | 'auto';
+  accessMode?: 'pot' | 'direct';
   container?: string;
   subtitleLangs?: string[];
   subtitleMode?: 'embed' | 'separate' | 'none';
@@ -371,7 +379,7 @@ export const api = {
     }),
 
   getFormats: (url: string) =>
-    request<{ videoId: string; title: string; formats: VideoFormat[]; subtitles: SubtitleInfo[] }>(
+    request<{ videoId: string; title: string; formats: VideoFormat[]; subtitles: SubtitleInfo[]; authentication?: 'anonymous' | 'cookie'; accessMode?: 'pot' | 'direct' }>(
       `/download/formats?url=${encodeURIComponent(url)}`,
     ),
 

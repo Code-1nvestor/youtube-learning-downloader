@@ -23,7 +23,11 @@ export class ConnectivityService {
     this.running = true;
     const startedAt = Date.now();
     try {
-      const result = await this.ytDlpService.resolve(OFFICIAL_TEST_VIDEO);
+      const cookieConfigured = this.cookieService.getStatus().configured;
+      const result = await this.ytDlpService.resolve(
+        OFFICIAL_TEST_VIDEO,
+        cookieConfigured ? 'cookie' : 'anonymous',
+      );
       this.cookieService.recordVerification(true);
       return this.makeStatus(true, 'OK', '连接成功，可以解析 YouTube', startedAt, {
         videoTitle: result.videos[0]?.title ?? result.title,

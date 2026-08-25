@@ -179,6 +179,41 @@ test('re-encodes non-WebM source formats into a real WebM output', () => {
   );
 });
 
+test('keeps anonymous format identity during download and only retries Cookie after bot verification', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yld-auth-download-'));
+  const calls: string[][] = [];
+  const service = new DownloadService({
+    binary: 'yt-dlp',
+    tempRootPath: path.join(root, 'cache'),
+    getAvailableDiskBytes: () => null,
+    getCookieArg: () => ({ flag: '--cookies', value: 'C:\\Data\\youtube-auth.txt' }),
+    runProcessStreaming: async (_command, args) => {
+      calls.push(args);
+      return calls.length === 1
+        ? { stdout: '', stderr: 'Sign in to confirm you are not a bot', exitCode: 1, durationMs: 1 }
+        : { stdout: '', stderr: '', exitCode: 0, durationMs: 1 };
+    },
+  });
+  const task = createTask({
+    id: 'anonymous-4k',
+    formatId: '401+bestaudio[ext=webm]/401+bestaudio',
+    authentication: 'anonymous',
+    outputPath: path.join(root, 'downloads', 'test.webm'),
+    container: 'webm',
+  });
+
+  try {
+    await service.download(task, new AbortController().signal, { onProgress: () => {} });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]?.includes('--cookies'), false);
+    assert.equal(calls[1]?.includes('--cookies'), true);
+    assert.equal(calls[0]?.[calls[0]!.indexOf('-f') + 1], task.formatId);
+    assert.equal(calls[1]?.[calls[1]!.indexOf('-f') + 1], task.formatId);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('rejects embedded subtitles for audio-only output before launching yt-dlp', () => {
   const service = new DownloadService({ binary: 'yt-dlp', tempRootPath: TEST_TEMP_ROOT });
 

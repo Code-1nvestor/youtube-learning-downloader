@@ -23,8 +23,10 @@ function createService(
 
 test('reports a successful YouTube parse without downloading media', async () => {
   let received = '';
-  const service = createService(async (url) => {
+  let receivedAuthentication = '';
+  const service = createService(async (url, authentication) => {
     received = url;
+    receivedAuthentication = authentication ?? '';
     return { kind: 'video', title: 'yt-dlp test video', videos: [] };
   }, 'http://127.0.0.1:7890', {
     configured: true,
@@ -35,6 +37,7 @@ test('reports a successful YouTube parse without downloading media', async () =>
 
   const status = await service.testYouTube();
   assert.match(received, /youtube\.com\/watch/);
+  assert.equal(receivedAuthentication, 'cookie');
   assert.equal(status.ok, true);
   assert.equal(status.code, 'OK');
   assert.equal(status.proxyConfigured, true);

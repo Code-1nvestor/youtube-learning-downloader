@@ -18,15 +18,23 @@
  * 格式: {"percent":42.3,"speed":2415919,"eta":41,"total_bytes":164000000,...}
  */
 
-import { runProcessStreaming } from '../core/process.ts';
+import {
+  runProcessStreaming,
+  type ProcessResult,
+  type StreamingProcessOptions,
+} from '../core/process.ts';
 import { translateDownloadError } from '../core/yt-dlp-errors.ts';
 import { getYtDlpNetworkArgs } from '../core/yt-dlp-network.ts';
-import { getYtDlpRuntimeArgs } from '../core/yt-dlp-runtime.ts';
+import { getYtDlpRuntimeArgs, type YoutubeRuntimeConfig } from '../core/yt-dlp-runtime.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CookieArg } from '../types/auth.ts';
 import type { GentleSettings } from '../types/settings.ts';
-import type { DownloadTask, ProgressInfo } from '../types/download.ts';
+import type {
+  DownloadAuthenticationMode,
+  DownloadTask,
+  ProgressInfo,
+} from '../types/download.ts';
 import { AppError } from '../types/errors.ts';
 import { parseDownloadProgress } from './download-progress.ts';
 
@@ -48,6 +56,8 @@ export interface DownloadServiceOptions {
   ffmpegBinary?: string;
   /** Deno executable used by yt-dlp's YouTube EJS challenge solver. */
   denoBinary?: string;
+  /** Current PO Token provider profile; absent means direct YouTube access only. */
+  getYoutubeRuntimeConfig?: () => YoutubeRuntimeConfig;
   /** Cookie 参数提供者（可选，运行时动态读取） */
   getCookieArg?: () => CookieArg | undefined;
   /** 代理地址提供者（可选，运行时动态读取） */
@@ -57,27 +67,39 @@ export interface DownloadServiceOptions {
   getAvailableDiskBytes?: (targetPath: string) => number | null;
   /** 每个任务的下载分片与合并中间文件根目录。 */
   tempRootPath: string;
+  /** 测试可替换流式进程执行器。 */
+  runProcessStreaming?: StreamingProcessRunner;
 }
+
+type StreamingProcessRunner = (
+  command: string,
+  args: string[],
+  options?: StreamingProcessOptions,
+) => Promise<ProcessResult>;
 
 export class DownloadService {
   private readonly binary: string;
   private readonly ffmpegBinary?: string;
   private readonly denoBinary?: string;
+  private readonly getYoutubeRuntimeConfig?: () => YoutubeRuntimeConfig;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
   private readonly getGentleSettings?: () => GentleSettings;
   private readonly getAvailableDiskBytes: (targetPath: string) => number | null;
   private readonly tempRootPath: string;
+  private readonly processRunner: StreamingProcessRunner;
 
   constructor(options: DownloadServiceOptions) {
     this.binary = options.binary;
     this.ffmpegBinary = options.ffmpegBinary;
     this.denoBinary = options.denoBinary;
+    this.getYoutubeRuntimeConfig = options.getYoutubeRuntimeConfig;
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
     this.getGentleSettings = options.getGentleSettings;
     this.getAvailableDiskBytes = options.getAvailableDiskBytes ?? readAvailableDiskBytes;
     this.tempRootPath = path.resolve(options.tempRootPath);
+    this.processRunner = options.runProcessStreaming ?? runProcessStreaming;
   }
 
   /**
@@ -94,10 +116,51 @@ export class DownloadService {
     callbacks: DownloadCallbacks,
   ): Promise<void> {
     this.checkDiskSpace(task);
-    const args = this.buildDownloadArgs(task);
     fs.mkdirSync(this.getTaskTempPath(task), { recursive: true });
 
-    const result = await runProcessStreaming(this.binary, args, {
+    const authentication = task.authentication ?? 'auto';
+    try {
+      await this.runDownloadAttempt(task, authentication, signal, callbacks);
+    } catch (error) {
+      const cookieAvailable = Boolean(this.getCookieArg?.());
+      if (
+        authentication !== 'anonymous'
+        || !cookieAvailable
+        || signal.aborted
+        || !shouldRetryDownloadWithCookie(error)
+      ) {
+        throw error;
+      }
+
+      callbacks.onWarning?.(
+        '匿名下载触发 YouTube 登录验证，正在使用 Cookie 重试；保持原格式 ID，不会静默降低画质',
+      );
+      callbacks.onProgress({
+        stage: 'preparing',
+        percent: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        speed: '',
+        eta: '',
+      });
+      await this.runDownloadAttempt(task, 'cookie', signal, callbacks);
+    }
+
+    this.cleanupTaskTempArtifacts(task);
+  }
+
+  private async runDownloadAttempt(
+    task: DownloadTask,
+    authentication: DownloadAuthenticationMode,
+    signal: AbortSignal,
+    callbacks: DownloadCallbacks,
+  ): Promise<void> {
+    if (authentication === 'cookie' && !this.getCookieArg?.()) {
+      throw new AppError('COOKIE_ERROR', '该任务需要 Cookie，但当前 Cookie 配置已被清除，请重新授权后重试');
+    }
+    const args = this.buildDownloadArgs(task, authentication);
+
+    const result = await this.processRunner(this.binary, args, {
       signal,
       onStdoutLine: (line) => {
         const progress = this.parseProgress(line);
@@ -121,8 +184,6 @@ export class DownloadService {
       // 翻译 yt-dlp 错误（复用 yt-dlp.service.ts 的错误模式）
       throw translateDownloadError(result.stderr, task.title);
     }
-
-    this.cleanupTaskTempArtifacts(task);
   }
 
   /** 暂停/失败保留分片；取消或移除任务时只清理该任务的隔离目录。 */
@@ -193,7 +254,10 @@ export class DownloadService {
    * 构建 yt-dlp 下载命令参数。
    * 独立为公开方法便于测试和审查。
    */
-  buildDownloadArgs(task: DownloadTask): string[] {
+  buildDownloadArgs(
+    task: DownloadTask,
+    authentication: DownloadAuthenticationMode = task.authentication ?? 'auto',
+  ): string[] {
     if (
       (task.container === 'mp3' || task.container === 'm4a') &&
       task.subtitleMode === 'embed'
@@ -222,7 +286,10 @@ export class DownloadService {
     if (task.container === 'mp3' || task.container === 'm4a') {
       args.push('--extract-audio', '--audio-format', task.container);
     } else if (task.container === 'mp4') {
-      args.push('--merge-output-format', 'mp4');
+      // 4K is commonly WebM/VP9/AV1 only. Preserve resolution and transcode only
+      // when the locked source cannot be represented as MP4 directly.
+      args.push('--merge-output-format', 'mp4/mkv');
+      args.push('--recode-video', 'mp4');
     } else if (task.container === 'webm') {
       // 登录 Cookie 可能使 YouTube 只返回 MP4/HLS。优先直接合并原生 WebM；
       // 若实际轨道不是 WebM，则先使用兼容的中间容器，再由 ffmpeg 真正转码。
@@ -271,9 +338,24 @@ export class DownloadService {
       args.push('--sleep-requests', '1');
     }
 
-    // 注入代理与 Cookie 参数（在 URL 之前）
-    args.push(...getYtDlpRuntimeArgs(this.denoBinary));
-    args.push(...getYtDlpNetworkArgs(this.getProxyUrl, this.getCookieArg));
+    // 注入代理；仅 Cookie 解析得到的任务或兼容旧任务才附加 Cookie。
+    const youtubeRuntime = {
+      denoBinary: this.denoBinary,
+      remoteEjs: true,
+      ...this.getYoutubeRuntimeConfig?.(),
+    } satisfies YoutubeRuntimeConfig;
+    const accessMode = task.accessMode ?? 'direct';
+    if (accessMode === 'pot' && !youtubeRuntime.poTokenProvider) {
+      throw new AppError(
+        'POT_PROVIDER_UNAVAILABLE',
+        '该任务锁定了 PO Token 格式，但本地 Token Provider 当前不可用；为避免降画质，任务已停止',
+      );
+    }
+    args.push(...getYtDlpRuntimeArgs(youtubeRuntime, accessMode));
+    args.push(...getYtDlpNetworkArgs(
+      this.getProxyUrl,
+      authentication === 'anonymous' ? undefined : this.getCookieArg,
+    ));
 
     // 目标 URL
     args.push(`https://www.youtube.com/watch?v=${task.videoId}`);
@@ -297,6 +379,10 @@ export class DownloadService {
   parseProgress(line: string): ProgressInfo | null {
     return parseDownloadProgress(line);
   }
+}
+
+function shouldRetryDownloadWithCookie(error: unknown): boolean {
+  return error instanceof AppError && error.code === 'RATE_LIMITED';
 }
 
 export function calculateRequiredDiskBytes(estimatedBytes: number, downloadedBytes = 0): number {

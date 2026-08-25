@@ -22,11 +22,16 @@
  * - 搜索:            yt-dlp "ytsearch20:<keyword>" --flat-playlist -J
  */
 
-import { runProcess, BinaryNotFoundError } from './process.ts';
+import {
+  runProcess,
+  BinaryNotFoundError,
+  type ProcessResult,
+  type RunProcessOptions,
+} from './process.ts';
 import { classifyQuery } from './url-classifier.ts';
 import { translateYtDlpError } from './yt-dlp-errors.ts';
 import { injectYtDlpNetworkArgs } from './yt-dlp-network.ts';
-import { getYtDlpRuntimeArgs } from './yt-dlp-runtime.ts';
+import { getYtDlpRuntimeArgs, type YoutubeRuntimeConfig } from './yt-dlp-runtime.ts';
 import { AppError } from '../types/errors.ts';
 import type { CookieArg } from '../types/auth.ts';
 import type { GentleSettings } from '../types/settings.ts';
@@ -36,6 +41,8 @@ import type {
   VideoFormat,
   SubtitleInfo,
   Thumbnail,
+  AuthenticationMode,
+  YoutubeAccessMode,
 } from '../types/video.ts';
 
 // ————————————————————————————————————————————
@@ -47,6 +54,8 @@ export interface YtDlpServiceOptions {
   binary?: string;
   /** Deno executable used by yt-dlp's YouTube EJS challenge solver. */
   denoBinary?: string;
+  /** Dynamic PO Token profile. It is omitted when the local provider is not healthy. */
+  getYoutubeRuntimeConfig?: () => YoutubeRuntimeConfig;
   /** 单次解析超时（毫秒），大播放列表建议 ≥ 60s */
   timeoutMs?: number;
   /** Cookie 参数提供者（可选，运行时动态读取） */
@@ -55,9 +64,19 @@ export interface YtDlpServiceOptions {
   getProxyUrl?: () => string | undefined;
   /** 温和模式配置提供者（解析请求时动态读取） */
   getGentleSettings?: () => GentleSettings;
+  /** 测试可替换进程执行器。 */
+  runProcess?: ProcessRunner;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'denoBinary' | 'getCookieArg' | 'getProxyUrl' | 'getGentleSettings'>> = {
+export type ResolveAuthenticationPolicy = 'auto' | AuthenticationMode;
+
+type ProcessRunner = (
+  command: string,
+  args: string[],
+  options?: RunProcessOptions,
+) => Promise<ProcessResult>;
+
+const DEFAULT_OPTIONS: Required<Omit<YtDlpServiceOptions, 'denoBinary' | 'getYoutubeRuntimeConfig' | 'getCookieArg' | 'getProxyUrl' | 'getGentleSettings' | 'runProcess'>> = {
   binary: 'yt-dlp',
   timeoutMs: 60_000,
 };
@@ -121,17 +140,21 @@ export class YtDlpService {
   private readonly binary: string;
   private readonly timeoutMs: number;
   private readonly denoBinary?: string;
+  private readonly getYoutubeRuntimeConfig?: () => YoutubeRuntimeConfig;
   private readonly getCookieArg?: () => CookieArg | undefined;
   private readonly getProxyUrl?: () => string | undefined;
   private readonly getGentleSettings?: () => GentleSettings;
+  private readonly processRunner: ProcessRunner;
 
   constructor(options: YtDlpServiceOptions = {}) {
     this.binary = options.binary ?? DEFAULT_OPTIONS.binary;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs;
     this.denoBinary = options.denoBinary;
+    this.getYoutubeRuntimeConfig = options.getYoutubeRuntimeConfig;
     this.getCookieArg = options.getCookieArg;
     this.getProxyUrl = options.getProxyUrl;
     this.getGentleSettings = options.getGentleSettings;
+    this.processRunner = options.runProcess ?? runProcess;
   }
 
   /**
@@ -141,7 +164,7 @@ export class YtDlpService {
    */
   async checkAvailable(): Promise<string> {
     try {
-      const result = await runProcess(this.binary, ['--version'], {
+      const result = await this.processRunner(this.binary, ['--version'], {
         timeoutMs: 10_000,
       });
       const version = result.stdout.trim();
@@ -167,19 +190,27 @@ export class YtDlpService {
    * 统一解析入口：自动识别 URL 类型并分发。
    * 对应后端路由 GET /api/resolve 的核心实现。
    */
-  async resolve(query: string): Promise<ResolveResult> {
+  async resolve(
+    query: string,
+    authentication: ResolveAuthenticationPolicy = 'auto',
+  ): Promise<ResolveResult> {
     const { kind, normalized } = classifyQuery(query);
 
     switch (kind) {
       case 'video':
-        return this.resolveVideo(normalized);
+        return this.resolveVideo(normalized, authentication);
       case 'playlist':
       case 'channel':
         // 频道与播放列表结构一致（都是视频集合），复用同一实现
-        return this.resolvePlaylist(normalized, kind);
+        return this.resolvePlaylist(normalized, kind, undefined, authentication);
       case 'search':
         // 搜索 = yt-dlp 的 ytsearch 协议，复用播放列表解析
-        return this.resolvePlaylist(`ytsearch20:${normalized}`, 'playlist', `搜索: ${normalized}`);
+        return this.resolvePlaylist(
+          `ytsearch20:${normalized}`,
+          'playlist',
+          `搜索: ${normalized}`,
+          authentication,
+        );
     }
   }
 
@@ -189,12 +220,15 @@ export class YtDlpService {
    * 命令: yt-dlp --dump-json --no-playlist <url>
    * - --no-playlist: 防止 watch?v=xx&list=yy 链接误拉整个列表
    */
-  private async resolveVideo(url: string): Promise<ResolveResult> {
+  private async resolveVideo(
+    url: string,
+    authentication: ResolveAuthenticationPolicy,
+  ): Promise<ResolveResult> {
     const args = ['--dump-json', '--no-playlist', '--no-warnings', url];
-    const result = await this.exec(args, `解析视频失败`);
+    const execution = await this.execForPolicy(args, `解析视频失败`, authentication);
 
-    const raw = this.parseJsonLine<RawEntry>(result.stdout);
-    const video = this.mapToVideoInfo(raw);
+    const raw = this.parseJsonLine<RawEntry>(execution.result.stdout);
+    const video = this.mapToVideoInfo(raw, execution.authentication, execution.accessMode);
 
     return { kind: 'video', title: video.title, videos: [video] };
   }
@@ -210,16 +244,23 @@ export class YtDlpService {
     url: string,
     kind: 'playlist' | 'channel',
     titleOverride?: string,
+    authentication: ResolveAuthenticationPolicy = 'auto',
   ): Promise<ResolveResult> {
     const args = ['--flat-playlist', '-J', '--no-warnings', url];
-    const result = await this.exec(args, `解析播放列表失败`);
+    const execution = await this.execForPolicy(args, `解析播放列表失败`, authentication);
 
-    const raw = this.parseJsonLine<RawPlaylistJson>(result.stdout);
+    const raw = this.parseJsonLine<RawPlaylistJson>(execution.result.stdout);
     const entries = raw.entries ?? [];
 
     const videos: VideoInfo[] = entries
       .filter((e): e is RawEntry & { id: string } => typeof e.id === 'string')
-      .map((e, index) => this.mapFlatEntry(e, raw.title, index + 1));
+      .map((e, index) => this.mapFlatEntry(
+        e,
+        raw.title,
+        index + 1,
+        execution.authentication,
+        execution.accessMode,
+      ));
 
     return {
       kind,
@@ -237,10 +278,15 @@ export class YtDlpService {
   // ——————————————————————————————————————————
 
   /** 执行 yt-dlp 并统一翻译错误（所有私有方法的唯一出口） */
-  private async exec(args: string[], contextMessage: string) {
+  private async exec(
+    args: string[],
+    contextMessage: string,
+    authentication: AuthenticationMode,
+    accessMode: YoutubeAccessMode,
+  ): Promise<ProcessResult> {
     try {
-      const finalArgs = this.buildResolveArgs(args);
-      const result = await runProcess(this.binary, finalArgs, {
+      const finalArgs = this.buildResolveArgs(args, authentication === 'cookie', accessMode);
+      const result = await this.processRunner(this.binary, finalArgs, {
         timeoutMs: this.timeoutMs,
       });
 
@@ -260,14 +306,85 @@ export class YtDlpService {
     }
   }
 
+  /**
+   * 公共内容先完全不带 Cookie。只有匿名请求失败且已配置 Cookie 时才兜底，
+   * 从根源上避免登录客户端隐藏 4K/8K 自适应格式。
+   */
+  private async execAnonymousFirst(
+    args: string[],
+    contextMessage: string,
+  ): Promise<{
+    result: ProcessResult;
+    authentication: AuthenticationMode;
+    accessMode: YoutubeAccessMode;
+  }> {
+    const accessMode = this.preferredAccessMode();
+    try {
+      return {
+        result: await this.exec(args, contextMessage, 'anonymous', accessMode),
+        authentication: 'anonymous',
+        accessMode,
+      };
+    } catch (error) {
+      if (!this.getCookieArg?.() || !shouldRetryResolveWithCookie(error)) throw error;
+      console.warn(`[yt-dlp] 匿名${contextMessage}，改用 Cookie 兜底；不会合并或覆盖匿名格式列表`);
+      return {
+        result: await this.exec(args, contextMessage, 'cookie', accessMode),
+        authentication: 'cookie',
+        accessMode,
+      };
+    }
+  }
+
+  private async execForPolicy(
+    args: string[],
+    contextMessage: string,
+    authentication: ResolveAuthenticationPolicy,
+  ): Promise<{
+    result: ProcessResult;
+    authentication: AuthenticationMode;
+    accessMode: YoutubeAccessMode;
+  }> {
+    if (authentication === 'auto') return this.execAnonymousFirst(args, contextMessage);
+    if (authentication === 'cookie' && !this.getCookieArg?.()) {
+      throw new AppError('COOKIE_ERROR', '当前没有可用的 Cookie 配置');
+    }
+    const accessMode = this.preferredAccessMode();
+    return {
+      result: await this.exec(args, contextMessage, authentication, accessMode),
+      authentication,
+      accessMode,
+    };
+  }
+
   /** 构建解析命令参数，供测试和诊断确认温和模式开关。 */
-  buildResolveArgs(args: string[]): string[] {
-    const finalArgs = injectYtDlpNetworkArgs([...args], this.getProxyUrl, this.getCookieArg);
-    finalArgs.unshift(...getYtDlpRuntimeArgs(this.denoBinary));
+  buildResolveArgs(
+    args: string[],
+    useCookie = false,
+    accessMode: YoutubeAccessMode = this.preferredAccessMode(),
+  ): string[] {
+    const finalArgs = injectYtDlpNetworkArgs(
+      [...args],
+      this.getProxyUrl,
+      useCookie ? this.getCookieArg : undefined,
+    );
+    finalArgs.unshift(...getYtDlpRuntimeArgs(this.youtubeRuntimeConfig(), accessMode));
     if (this.getGentleSettings?.()?.gentleMode) {
       finalArgs.unshift('--sleep-requests', '1');
     }
     return finalArgs;
+  }
+
+  private preferredAccessMode(): YoutubeAccessMode {
+    return this.youtubeRuntimeConfig().poTokenProvider ? 'pot' : 'direct';
+  }
+
+  private youtubeRuntimeConfig(): YoutubeRuntimeConfig {
+    return {
+      denoBinary: this.denoBinary,
+      remoteEjs: true,
+      ...this.getYoutubeRuntimeConfig?.(),
+    };
   }
 
   // ——————————————————————————————————————————
@@ -290,10 +407,16 @@ export class YtDlpService {
   }
 
   /** 完整视频 JSON → VideoInfo（含格式/字幕） */
-  private mapToVideoInfo(raw: RawEntry): VideoInfo {
+  private mapToVideoInfo(
+    raw: RawEntry,
+    authentication: AuthenticationMode,
+    accessMode: YoutubeAccessMode,
+  ): VideoInfo {
     return {
       id: raw.id ?? '',
       title: raw.title ?? '未知标题',
+      authentication,
+      accessMode,
       ...(raw.duration !== undefined ? { duration: raw.duration } : {}),
       thumbnails: raw.thumbnails ?? (raw.thumbnail ? [{ url: raw.thumbnail }] : []),
       ...(raw.upload_date ? { uploadDate: formatUploadDate(raw.upload_date) } : {}),
@@ -306,10 +429,18 @@ export class YtDlpService {
   }
 
   /** flat-playlist 骨架 entry → VideoInfo（不含格式/字幕，按需再取） */
-  private mapFlatEntry(raw: RawEntry, playlistTitle: string | undefined, index: number): VideoInfo {
+  private mapFlatEntry(
+    raw: RawEntry,
+    playlistTitle: string | undefined,
+    index: number,
+    authentication: AuthenticationMode,
+    accessMode: YoutubeAccessMode,
+  ): VideoInfo {
     return {
       id: raw.id!,
       title: raw.title ?? '未知标题',
+      authentication,
+      accessMode,
       ...(raw.duration !== undefined ? { duration: raw.duration } : {}),
       thumbnails: raw.thumbnails ?? [],
       ...(raw.channel ?? raw.uploader
@@ -386,6 +517,11 @@ export class YtDlpService {
     }
     return result;
   }
+}
+
+function shouldRetryResolveWithCookie(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+  return error.code !== 'YT_DLP_MISSING' && error.code !== 'TIMEOUT';
 }
 
 // ————————————————————————————————————————————

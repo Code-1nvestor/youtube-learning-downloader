@@ -1,6 +1,6 @@
 {
   "name": "youtube-learning-downloader",
-  "version": "0.24.2",
+  "version": "0.25.0",
   "private": true,
   "main": "desktop/main.cjs",
   "description": "YouTube 学习资料下载工具（个人学习用途，非商业）",
@@ -14,9 +14,10 @@
     "build:client": "npm --prefix client run build",
     "build:server": "node scripts/build-server.mjs",
     "build": "npm run build:client && npm run build:server",
+    "components:prepare": "node scripts/prepare-youtube-components.mjs && node scripts/prepare-youtube-plugin.mjs",
     "desktop:dev": "npm run build && electron .",
-    "desktop:pack": "npm run build && electron-builder --dir",
-    "desktop:dist": "npm run build && electron-builder --win nsis portable",
+    "desktop:pack": "npm run components:prepare && npm run build && electron-builder --dir",
+    "desktop:dist": "npm run components:prepare && npm run build && electron-builder --win nsis portable",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-sqlite node_modules/tsx/dist/cli.mjs --test tests/**/*.test.ts",
     "test:e2e": "node scripts/e2e-smoke.mjs",
@@ -33,7 +34,8 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "unzipper": "0.12.5"
   },
   "build": {
     "appId": "com.local.youtubelearningdownloader",
@@ -72,6 +74,14 @@
       {
         "from": "resources/bin",
         "to": "bin"
+      },
+      {
+        "from": "resources/components",
+        "to": "components",
+        "filter": [
+          "**/*",
+          "!.bgutil-staging-*{,/**/*}"
+        ]
       }
     ],
     "win": {

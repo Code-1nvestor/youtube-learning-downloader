@@ -38,7 +38,7 @@ test('migrates version 1 databases without losing unfinished tasks', () => {
   const migrated = initDatabase(dbPath);
   try {
     const version = migrated.db.prepare('PRAGMA user_version').get() as { user_version: number };
-    assert.equal(version.user_version, 3);
+    assert.equal(version.user_version, 5);
 
     const row = migrated.stmts.getTaskById.get('legacy-task');
     assert.ok(row);
@@ -49,6 +49,8 @@ test('migrates version 1 databases without losing unfinished tasks', () => {
     assert.equal(task.maxRetries, 2);
     assert.equal(task.nextRetryAt, undefined);
     assert.equal(task.errorCode, undefined);
+    assert.equal(task.authentication, 'auto');
+    assert.equal(task.accessMode, 'direct');
   } finally {
     migrated.close();
     fs.rmSync(root, { recursive: true, force: true });

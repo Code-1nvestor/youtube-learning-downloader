@@ -12,6 +12,9 @@
 /** 任务状态机：queued → downloading → completed / retrying / failed / cancelled */
 import type { ErrorCode } from './errors.ts';
 
+export type DownloadAuthenticationMode = 'anonymous' | 'cookie' | 'auto';
+export type DownloadAccessMode = 'pot' | 'direct';
+
 export type DownloadStatus =
   | 'queued'        // 已入队，等待分配执行槽位
   | 'downloading'   // 正在下载
@@ -43,6 +46,10 @@ export interface DownloadTask {
   playlistIndex?: number;
   /** yt-dlp format_id 或格式选择表达式（如 "bestvideo[height<=1080]+bestaudio"） */
   formatId: string;
+  /** 格式来源身份；auto 仅用于兼容升级前创建的旧任务。 */
+  authentication?: DownloadAuthenticationMode;
+  /** 解析格式时使用的 YouTube 访问策略，下载时必须保持一致。 */
+  accessMode?: DownloadAccessMode;
   /** 输出容器：mp4 / webm / mp3 / m4a */
   container: string;
   /** 最终输出文件的绝对路径 */
@@ -137,6 +144,10 @@ export interface CreateDownloadTaskInput {
   playlistIndex?: number;
   /** 格式选择表达式，留空则使用服务端默认策略 */
   formatId?: string;
+  /** 解析该格式时实际采用的身份，防止下载时重新带 Cookie 导致格式降级。 */
+  authentication?: DownloadAuthenticationMode;
+  /** 与 formatId 同时锁定的访问策略。 */
+  accessMode?: DownloadAccessMode;
   /** 目标容器，默认 mp4 */
   container?: string;
   /** 字幕语言 */

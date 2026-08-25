@@ -998,7 +998,9 @@ function YtDlpUpdateSection() {
 function RuntimeSection({ health }: { health: HealthStatus | null }) {
   const tools = [
     { name: 'yt-dlp', status: health?.runtime.ytDlp },
-    { name: 'Deno (YouTube EJS)', status: health?.runtime.deno },
+    { name: 'Deno', status: health?.runtime.deno },
+    { name: 'YouTube EJS', status: health?.runtime.ejs },
+    { name: 'PO Token Provider', status: health?.runtime.poTokenProvider },
     { name: 'ffmpeg', status: health?.runtime.ffmpeg },
   ];
 
@@ -1008,7 +1010,7 @@ function RuntimeSection({ health }: { health: HealthStatus | null }) {
       <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
         下载器启动时会自动检查必要工具。
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
         {tools.map(({ name, status }) => (
           <div
             key={name}

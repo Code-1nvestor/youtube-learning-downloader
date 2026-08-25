@@ -34,6 +34,9 @@ Electron 桌面版。
 - PWA、亮色/暗色/跟随系统主题
 - Windows 桌面启动、内置工具自检和安装包配置
 - 桌面版内置 Deno，并显式提供给 yt-dlp 的 YouTube EJS 挑战解析
+- 匿名 mweb + PO Token 为公共视频主路径；Cookie 只在受限内容需要时兜底
+- 解析与下载共同锁定访问策略和真实视频格式 ID，Provider 掉线时明确停止而非降画质
+- yt-dlp、官方 EJS 回退和 PO Token Provider 使用独立更新边界与校验流程
 - 首次使用准备向导、一键脱敏诊断报告和 yt-dlp 官方 Nightly 安全更新
 
 ## 桌面版第一次使用
@@ -63,6 +66,10 @@ Chrome 用户建议使用应用专用登录：可见登录阶段不启用远程�
 重新打开专用窗口登录即可。旧版快照、浏览器直读和 Netscape Cookie 文件方式折叠在“高级
 兼容方式”中，其中前两种仍可能要求关闭浏览器。升级时，旧版直读配置会自动停用并提示迁移，
 避免每次解析都重复要求关闭 Chrome。
+从 0.25.0 起，公共视频优先使用匿名 mweb + PO Token，已配置 Cookie 也不会默认参与；只有匿名
+请求遇到私有、年龄或登录限制时才按需使用 Cookie。解析结果会同时记录身份与访问策略，并随
+下载任务持久化。预设与实际格式都会先解析成真实视频格式 ID：下载、重试和字幕请求必须复用
+同一策略与视频 ID；Token Provider 暂时不可用时会明确停止，绝不会静默换成更低画质。
 若 Cookie 配置测试仍失败，应用会区分数据库被占用、Windows 解密失败、数据库缺失和文件
 格式错误，并给出对应修复入口。仍失败时可改用 Firefox，或重新登录 YouTube 后导出最新文件。
 验证过程只解析官方测试视频，不下载媒体。
@@ -83,7 +90,8 @@ Chrome 用户建议使用应用专用登录：可见登录阶段不启用远程�
 提示并要求确认。画质下拉框由解析结果动态生成：源视频和所选容器有 8K/4K 时才显示对应选项，
 最高只有 1080p 时不会显示虚假的 4K，也不会静默把 WebM 或最高画质改回 MP4/720p。若登录
 Cookie 使 YouTube 只返回 MP4/HLS，WebM 仍会显示源视频的真实画质，并在下载后由 ffmpeg
-转码为真正的 WebM；此时会比直接下载原生 WebM 更耗 CPU 和时间。
+转码为真正的 WebM；此时会比直接下载原生 WebM 更耗 CPU 和时间。结果卡片会明确显示当前
+采用“匿名优先解析”还是“Cookie 兜底”，便于判断画质为何受限。
 
 ## 下载失败时生成诊断报告
 
@@ -129,6 +137,7 @@ Windows 默认程序播放或查看文件；“文件夹”会在文件资源管
 - 开发环境可使用系统 `yt-dlp` / `deno` / `ffmpeg`
 - 桌面发布需要把 `yt-dlp.exe`、`deno.exe`、`ffmpeg.exe`、`ffprobe.exe` 放入
   `resources/bin`
+- 打包前运行 `npm run components:prepare`，按固定提交与 SHA-256 准备 PO Token Provider
 
 ## 第一次运行
 
@@ -162,6 +171,7 @@ npm run typecheck     # 检查后端 TypeScript 类型
 npm test              # 运行后端单元测试
 npm run build         # 构建前端和后端
 npm run verify        # 依次执行类型检查、测试和构建
+npm run components:prepare # 校验并准备独立 PO Token Provider（仅发布/打包前需要）
 npm run desktop:dev   # 构建后启动桌面版
 npm run desktop:dist  # 生成 Windows 安装版和便携版
 ```
@@ -234,6 +244,7 @@ client/          React 前端
 server/          Express API、下载队列和 SQLite
 desktop/         Electron 桌面入口
 resources/bin/   桌面版内置 yt-dlp / Deno / ffmpeg（不提交二进制）
+resources/components/ YouTube 组件信任清单；生成的 Provider 目录不提交
 scripts/         构建脚本
 tests/           后端单元测试
 dist/            构建产物（不提交）

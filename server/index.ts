@@ -25,6 +25,7 @@ import { SettingsService } from './services/settings.service.ts';
 import { ToolUpdateService } from './services/tool-update.service.ts';
 import { ConnectivityService } from './services/connectivity.service.ts';
 import { BackupService } from './services/backup.service.ts';
+import { PoTokenProviderService } from './services/po-token-provider.service.ts';
 import { initDatabase, type DbContext } from './db/database.ts';
 import { isAppError } from './types/errors.ts';
 import { runProcess, BinaryNotFoundError } from './core/process.ts';
@@ -116,10 +117,24 @@ async function main(): Promise<void> {
       outputPath,
     }),
   });
+  const poTokenProvider = new PoTokenProviderService({
+    runtimeBinary: process.execPath,
+    appDataPath: config.appDataPath,
+    resourcePath: config.resourcePath,
+  });
+  const poTokenStatus = await poTokenProvider.start();
+  console.log(`[startup] PO Token Provider: ${poTokenStatus.available ? poTokenStatus.version : poTokenStatus.message}`);
 
   const ytDlpService = new YtDlpService({
     binary: config.ytDlpBinary,
     denoBinary: config.denoBinary,
+    getYoutubeRuntimeConfig: () => ({
+      denoBinary: config.denoBinary,
+      remoteEjs: true,
+      ...(poTokenProvider.getRuntimeConfig()
+        ? { poTokenProvider: poTokenProvider.getRuntimeConfig() }
+        : {}),
+    }),
     timeoutMs: config.resolveTimeoutMs,
     getCookieArg: () => cookieService.getArg(),
     getProxyUrl: () => settingsService.getSettings().proxyUrl || undefined,
@@ -159,6 +174,13 @@ async function main(): Promise<void> {
   const downloadService = new DownloadService({
     binary: config.ytDlpBinary,
     denoBinary: config.denoBinary,
+    getYoutubeRuntimeConfig: () => ({
+      denoBinary: config.denoBinary,
+      remoteEjs: true,
+      ...(poTokenProvider.getRuntimeConfig()
+        ? { poTokenProvider: poTokenProvider.getRuntimeConfig() }
+        : {}),
+    }),
     ffmpegBinary: config.ffmpegBinary,
     tempRootPath: path.join(config.appDataPath, 'download-cache'),
     getCookieArg: () => cookieService.getArg(),
@@ -194,6 +216,13 @@ async function main(): Promise<void> {
   const subtitleService = new SubtitleService(ytDlpService, {
     binary: config.ytDlpBinary,
     denoBinary: config.denoBinary,
+    getYoutubeRuntimeConfig: () => ({
+      denoBinary: config.denoBinary,
+      remoteEjs: true,
+      ...(poTokenProvider.getRuntimeConfig()
+        ? { poTokenProvider: poTokenProvider.getRuntimeConfig() }
+        : {}),
+    }),
     ffmpegBinary: config.ffmpegBinary,
     outputRoot: appSettings.downloadPath,
     getCookieArg: () => cookieService.getArg(),
@@ -231,7 +260,23 @@ async function main(): Promise<void> {
     settingsService,
     toolUpdateService,
     connectivityService,
-    { ytDlp: ytDlpStatus, deno: denoStatus, ffmpeg: ffmpegStatus },
+    {
+      ytDlp: ytDlpStatus,
+      deno: denoStatus,
+      ejs: {
+        available: ytDlpStatus.available && denoStatus.available,
+        version: 'yt-dlp 内置 + 官方 ejs:npm 回退',
+        ...(!ytDlpStatus.available || !denoStatus.available
+          ? { message: 'EJS 需要 yt-dlp 与 Deno 同时可用' }
+          : {}),
+      },
+      poTokenProvider: {
+        available: poTokenStatus.available,
+        ...(poTokenStatus.version ? { version: poTokenStatus.version } : {}),
+        ...(poTokenStatus.message ? { message: poTokenStatus.message } : {}),
+      },
+      ffmpeg: ffmpegStatus,
+    },
     backupService,
     process.env.DESKTOP_API_TOKEN ?? '',
   );
@@ -252,6 +297,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string): void => {
     console.log(`\n[shutdown] 收到 ${signal}，正在关闭...`);
     queueService.shutdown();
+    poTokenProvider.stop();
     server.close(() => {
       console.log('[shutdown] 已停止接收新连接');
       // 关闭数据库

@@ -44,21 +44,25 @@ export function buildPresetFormatSelector(
   container: string,
   formats: VideoFormat[] = [],
 ): string {
-  if (container === 'mp3' || container === 'm4a') return 'bestaudio/best';
+  if (formats.length === 0) {
+    throw new Error('尚未加载实际格式，不能创建可能降画质的下载任务');
+  }
+
+  if (container === 'mp3' || container === 'm4a') {
+    const audio = selectBestAudioFormat(formats, container === 'm4a' ? 'm4a' : undefined)
+      ?? selectBestAudioFormat(formats);
+    if (!audio) throw new Error('当前视频没有可用音频格式');
+    return audio.formatId;
+  }
 
   const height = parseQualityHeight(quality);
-  const heightFilter = height ? `[height<=${height}]` : '';
-  if (container === 'webm') {
-    const actualFormat = selectBestVideoFormat(formats, height, 'webm')
-      ?? selectBestVideoFormat(formats, height);
-    if (actualFormat) {
-      return actualFormat.hasAudio
-        ? actualFormat.formatId
-        : buildVideoAndAudioSelector(actualFormat.formatId, 'webm');
-    }
-    return `bestvideo[ext=webm]${heightFilter}+bestaudio[ext=webm]/bestvideo[ext=webm]${heightFilter}+bestaudio/best[ext=webm]${heightFilter}/bestvideo${heightFilter}+bestaudio/best${heightFilter}/best`;
-  }
-  return `bestvideo[ext=mp4]${heightFilter}+bestaudio[ext=m4a]/bestvideo[ext=mp4]${heightFilter}+bestaudio/best[ext=mp4]${heightFilter}`;
+  const preferredContainer = container === 'webm' ? 'webm' : 'mp4';
+  const actualFormat = selectBestVideoFormat(formats, height, preferredContainer)
+    ?? selectBestVideoFormat(formats, height);
+  if (!actualFormat) throw new Error('当前视频没有符合该画质的实际视频格式');
+  return actualFormat.hasAudio
+    ? actualFormat.formatId
+    : buildVideoAndAudioSelector(actualFormat.formatId, preferredContainer);
 }
 
 export function buildResolutionChoices(
@@ -69,10 +73,10 @@ export function buildResolutionChoices(
   const nativeVideoFormats = formats.filter(
     (format) => format.hasVideo && format.container.toLowerCase() === compatibleContainer,
   );
-  const useWebmTranscodeFallback = compatibleContainer === 'webm'
+  const useTranscodeFallback = (compatibleContainer === 'webm' || compatibleContainer === 'mp4')
     && nativeVideoFormats.length === 0
     && formats.some((format) => format.hasVideo);
-  const eligibleFormats = useWebmTranscodeFallback
+  const eligibleFormats = useTranscodeFallback
     ? formats.filter((format) => format.hasVideo)
     : nativeVideoFormats;
   const heights = new Set<number>();
@@ -82,7 +86,9 @@ export function buildResolutionChoices(
   }
   const sorted = [...heights].sort((a, b) => b - a);
   const max = sorted[0];
-  const transcodeSuffix = useWebmTranscodeFallback ? '，转码为 WebM' : '';
+  const transcodeSuffix = useTranscodeFallback
+    ? `，转码为 ${compatibleContainer === 'webm' ? 'WebM' : 'MP4'}`
+    : '';
   return [
     {
       value: 'highest',
@@ -95,6 +101,19 @@ export function buildResolutionChoices(
       label: `${resolutionLabel(height)}${transcodeSuffix}`,
     })),
   ];
+}
+
+function selectBestAudioFormat(
+  formats: VideoFormat[],
+  container?: string,
+): VideoFormat | undefined {
+  return formats
+    .filter((format) => (
+      format.hasAudio
+      && !format.hasVideo
+      && (!container || format.container.toLowerCase() === container)
+    ))
+    .sort((a, b) => (b.filesize ?? 0) - (a.filesize ?? 0))[0];
 }
 
 function selectBestVideoFormat(

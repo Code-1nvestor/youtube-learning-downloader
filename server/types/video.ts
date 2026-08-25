@@ -9,6 +9,12 @@
 /** 查询输入的类型（由 url-classifier 判定） */
 export type QueryKind = 'video' | 'playlist' | 'channel' | 'search';
 
+/** 本次元数据解析实际采用的身份。 */
+export type AuthenticationMode = 'anonymous' | 'cookie';
+
+/** YouTube request profile used to expose the returned format IDs. */
+export type YoutubeAccessMode = 'pot' | 'direct';
+
 /** 缩略图 */
 export interface Thumbnail {
   url: string;
@@ -48,6 +54,10 @@ export interface SubtitleInfo {
 export interface VideoInfo {
   id: string;
   title: string;
+  /** 匿名优先；只有匿名解析失败后才标记为 Cookie 兜底。 */
+  authentication?: AuthenticationMode;
+  /** 下载必须复用该策略，否则同一格式 ID 可能消失。 */
+  accessMode?: YoutubeAccessMode;
   /** 时长（秒），直播/未知时为 undefined */
   duration?: number;
   thumbnails: Thumbnail[];

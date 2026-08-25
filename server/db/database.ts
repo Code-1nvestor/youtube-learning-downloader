@@ -20,7 +20,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 /** 当前 Schema 版本 */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 
 /** 预编译语句句柄（init 后填充） */
 export interface PreparedStatements {
@@ -73,7 +73,7 @@ export function initDatabase(dbPath: string): DbContext {
     upsertTask: db.prepare(`
       INSERT INTO download_tasks (
         id, video_id, title, playlist_title, playlist_index,
-        format_id, container, output_path,
+        format_id, authentication, access_mode, container, output_path,
         subtitle_langs, subtitle_mode, auto_subtitle,
         status, progress, speed, eta,
         downloaded_bytes, total_bytes, estimated_bytes,
@@ -81,7 +81,7 @@ export function initDatabase(dbPath: string): DbContext {
         created_at, completed_at, updated_at
       ) VALUES (
         $id, $video_id, $title, $playlist_title, $playlist_index,
-        $format_id, $container, $output_path,
+        $format_id, $authentication, $access_mode, $container, $output_path,
         $subtitle_langs, $subtitle_mode, $auto_subtitle,
         $status, $progress, $speed, $eta,
         $downloaded_bytes, $total_bytes, $estimated_bytes,
@@ -90,6 +90,8 @@ export function initDatabase(dbPath: string): DbContext {
       )
       ON CONFLICT(id) DO UPDATE SET
         status = $status,
+        authentication = $authentication,
+        access_mode = $access_mode,
         progress = $progress,
         speed = $speed,
         eta = $eta,
@@ -215,6 +217,16 @@ function migrate(db: DatabaseSync): void {
 
   if (version < 3) {
     addColumnIfMissing(db, 'download_tasks', 'error_code', 'TEXT');
+  }
+
+  if (version < 4) {
+    // 升级前的任务维持旧行为：有 Cookie 时继续使用 Cookie，否则匿名。
+    addColumnIfMissing(db, 'download_tasks', 'authentication', "TEXT NOT NULL DEFAULT 'auto'");
+  }
+
+  if (version < 5) {
+    // 旧任务没有 PO Token 上下文，维持原来的直接访问行为。
+    addColumnIfMissing(db, 'download_tasks', 'access_mode', "TEXT NOT NULL DEFAULT 'direct'");
   }
 
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

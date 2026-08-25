@@ -44,3 +44,6 @@ logs/
 # 桌面发布时下载的第三方工具（二进制不进入 Git）
 resources/bin/*.exe
 resources/bin/*.zip
+
+# PO Token Provider staging output is reproducible from the pinned, verified manifest.
+resources/components/bgutil/

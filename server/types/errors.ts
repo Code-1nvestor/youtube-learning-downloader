@@ -31,6 +31,7 @@ export const ERROR_CODES = {
   YT_DLP_MISSING: 'YT_DLP_MISSING', // 找不到 yt-dlp 可执行文件
   YT_DLP_OUTDATED: 'YT_DLP_OUTDATED', // yt-dlp 版本过旧
   FFMPEG_MISSING: 'FFMPEG_MISSING', // 找不到 ffmpeg（Phase 3 下载时检测）
+  POT_PROVIDER_UNAVAILABLE: 'POT_PROVIDER_UNAVAILABLE', // 任务锁定了 PO Token 格式，但 Provider 未就绪
 
   // —— 下载类（Phase 3+ 使用，先定义占位）——
   DOWNLOAD_FAILED: 'DOWNLOAD_FAILED',
@@ -62,6 +63,7 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   YT_DLP_MISSING: 500,
   YT_DLP_OUTDATED: 500,
   FFMPEG_MISSING: 500,
+  POT_PROVIDER_UNAVAILABLE: 503,
   DOWNLOAD_FAILED: 500,
   DOWNLOAD_CONFLICT: 409,
   QUEUE_FULL: 503,

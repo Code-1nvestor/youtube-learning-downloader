@@ -22,6 +22,8 @@ const VIDEO_ID_RE = /^[\w-]{11}$/;
 const ALLOWED_CONTAINERS = new Set(['mp4', 'webm', 'mp3', 'm4a']);
 const ALLOWED_SUBTITLE_MODES = new Set(['none', 'embed', 'separate']);
 const AUDIO_CONTAINERS = new Set(['mp3', 'm4a']);
+const ALLOWED_AUTHENTICATION = new Set(['anonymous', 'cookie', 'auto']);
+const ALLOWED_ACCESS_MODES = new Set(['pot', 'direct']);
 
 export function createDownloadRouter(
   ytDlpService: YtDlpService,
@@ -65,6 +67,12 @@ export function createDownloadRouter(
           throw new AppError('INVALID_PARAM', `tasks[${i}].container 仅支持 mp4、webm、mp3 或 m4a`);
         }
         if (
+          task.accessMode !== undefined &&
+          (typeof task.accessMode !== 'string' || !ALLOWED_ACCESS_MODES.has(task.accessMode))
+        ) {
+          throw new AppError('INVALID_PARAM', `tasks[${i}].accessMode 仅支持 pot 或 direct`);
+        }
+        if (
           task.subtitleMode !== undefined &&
           (typeof task.subtitleMode !== 'string' || !ALLOWED_SUBTITLE_MODES.has(task.subtitleMode))
         ) {
@@ -75,6 +83,12 @@ export function createDownloadRouter(
           (!Array.isArray(task.subtitleLangs) || task.subtitleLangs.some((language) => typeof language !== 'string'))
         ) {
           throw new AppError('INVALID_PARAM', `tasks[${i}].subtitleLangs 必须是语言代码数组`);
+        }
+        if (
+          task.authentication !== undefined &&
+          (typeof task.authentication !== 'string' || !ALLOWED_AUTHENTICATION.has(task.authentication))
+        ) {
+          throw new AppError('INVALID_PARAM', `tasks[${i}].authentication 仅支持 anonymous、cookie 或 auto`);
         }
         const container = task.container ?? 'mp4';
         if (AUDIO_CONTAINERS.has(container) && task.subtitleMode === 'embed') {
@@ -110,6 +124,8 @@ export function createDownloadRouter(
         title: video.title,
         formats: video.formats,
         subtitles: video.subtitles,
+        authentication: video.authentication,
+        accessMode: video.accessMode,
       }));
     }),
   );
